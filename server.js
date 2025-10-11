@@ -9,7 +9,26 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors()); // Дозволяє запити з вашого React додатку
+const allowedOrigins = [
+    'https://space-nft-clicker-225d.vercel.app', // ✅ Ваша production URL
+    'http://localhost:5173'  // ✅ URL для локальної розробки (порт може бути іншим, напр. 3000)
+];
+
+// Налаштування CORS
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Перевіряємо, чи є домен запиту у нашому білому списку
+        if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+            // !origin дозволяє запити без 'origin' (напр. з мобільних додатків або Postman)
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
+};
+
+// 👇 Застосовуємо наші налаштування CORS
+app.use(cors(corsOptions));
 app.use(express.json()); // Дозволяє серверу читати JSON з тіла запиту
 
 // Routes
