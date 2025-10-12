@@ -26,6 +26,7 @@ router.get("/me", async (req, res) => {
 // Ендпоінт для обробки "тапу"
 router.post("/tap", async (req, res) => {
   try {
+    
     const { telegramId } = req.user;
     // Атомарно збільшуємо баланс і повертаємо нове значення
     const result = await db.query(
