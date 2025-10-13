@@ -37,12 +37,12 @@ router.post("/", async (req, res) => {
     if (dbUser.rows.length === 0) {
       // Створюємо нового користувача
       dbUser = await db.query(
-        "INSERT INTO users (telegram_id, first_name, username, balance) VALUES ($1, $2, $3, 0) RETURNING *",
+        "INSERT INTO users (telegram_id, first_name, username, balance, photo_url) VALUES ($1, $2, $3, 0) RETURNING *",
         [telegramId, user.first_name, user.username,user.photo_url]
       );
     } else {
       // Оновлюємо час останнього входу
-      await db.query("UPDATE users SET last_login_at = NOW() WHERE telegram_id = $1", [telegramId]);
+      await db.query("UPDATE users SET last_login_at = NOW() WHERE telegram_id = $1", [telegramId, user.photo_url]);
     }
 
     const finalUser = dbUser.rows[0];
@@ -59,7 +59,7 @@ router.post("/", async (req, res) => {
         telegramId: finalUser.telegram_id,
         firstName: finalUser.first_name,
         username:finalUser.username,
-        photoUrl: finalUser.photo_url,
+        photoUrl: finalUser.photo_url || null,
         balance: finalUser.balance,
       },
     });
