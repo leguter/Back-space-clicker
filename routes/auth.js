@@ -30,22 +30,31 @@ router.post("/", async (req, res) => {
 
     // 2. Робота з користувачем
     const user = JSON.parse(urlParams.get("user"));
-    const telegramId = user.id;
+const telegramId = user.id;
 
-    let dbUser = await db.query("SELECT * FROM users WHERE telegram_id = $1", [telegramId]);
+// Перевіряємо, чи існує користувач
+let dbUser = await db.query("SELECT * FROM users WHERE telegram_id = $1", [telegramId]);
 
-    if (dbUser.rows.length === 0) {
-      // Створюємо нового користувача
-      dbUser = await db.query(
-        "INSERT INTO users (telegram_id, first_name, username, balance, photo_url) VALUES ($1, $2, $3, 0) RETURNING *",
-        [telegramId, user.first_name, user.username,user.photo_url]
-      );
-    } else {
-      // Оновлюємо час останнього входу
-      await db.query("UPDATE users SET last_login_at = NOW() WHERE telegram_id = $1", [telegramId, user.photo_url]);
-    }
+if (dbUser.rows.length === 0) {
+  // Створюємо нового користувача
+  dbUser = await db.query(
+    `INSERT INTO users (telegram_id, first_name, username, balance, photo_url)
+     VALUES ($1, $2, $3, 0, $4) RETURNING *`,
+    [telegramId, user.first_name, user.username, user.photo_url || null]
+  );
+} else {
+  // Оновлюємо час останнього входу і фото
+  dbUser = await db.query(
+    `UPDATE users
+     SET last_login_at = NOW(),
+         photo_url = $1
+     WHERE telegram_id = $2
+     RETURNING *`,
+    [user.photo_url || dbUser.rows[0].photo_url, telegramId]
+  );
+}
 
-    const finalUser = dbUser.rows[0];
+const finalUser = dbUser.rows[0];
 
     // 3. Створення JWT токена
     const token = jwt.sign({ telegramId: finalUser.telegram_id }, process.env.JWT_SECRET, {
