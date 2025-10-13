@@ -59,7 +59,7 @@ router.post("/", async (req, res) => {
         telegramId: finalUser.telegram_id,
         firstName: finalUser.first_name,
         username:finalUser.username,
-        photo: finalUser.photo,
+        photo: finalUser.photo_url,
         balance: finalUser.balance,
       },
     });
