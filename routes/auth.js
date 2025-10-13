@@ -38,7 +38,7 @@ router.post("/", async (req, res) => {
       // Створюємо нового користувача
       dbUser = await db.query(
         "INSERT INTO users (telegram_id, first_name, username, balance) VALUES ($1, $2, $3, 0) RETURNING *",
-        [telegramId, user.first_name, user.username]
+        [telegramId, user.first_name, user.username,user.photo_url]
       );
     } else {
       // Оновлюємо час останнього входу
@@ -59,7 +59,7 @@ router.post("/", async (req, res) => {
         telegramId: finalUser.telegram_id,
         firstName: finalUser.first_name,
         username:finalUser.username,
-        photo: finalUser.photo_url,
+        photoUrl: finalUser.photo_url,
         balance: finalUser.balance,
       },
     });
