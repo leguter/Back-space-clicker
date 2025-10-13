@@ -58,6 +58,8 @@ router.post("/", async (req, res) => {
       user: {
         telegramId: finalUser.telegram_id,
         firstName: finalUser.first_name,
+        username:finalUser.username,
+        photo: finalUser.photo,
         balance: finalUser.balance,
       },
     });
