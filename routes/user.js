@@ -171,4 +171,20 @@ router.post("/claim/subscription", async (req, res) => {
   }
 });
 
+router.get("/tasks", async (req, res) => {
+  try {
+    const { telegramId } = req.user;
+    const result = await db.query(
+      "SELECT task_id FROM user_tasks WHERE user_telegram_id = $1",
+      [telegramId]
+    );
+    // Повертаємо масив рядків, наприклад: ["follow_telegram_channel"]
+    const completedTasks = result.rows.map(row => row.task_id);
+    res.json({ completedTasks });
+  } catch (error) {
+    console.error("Error fetching user tasks:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
