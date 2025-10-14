@@ -70,6 +70,7 @@ const finalUser = dbUser.rows[0];
         username:finalUser.username,
         photoUrl: finalUser.photo_url || null,
         balance: finalUser.balance,
+        isSubscribed: finalUser.isSubscribed
       },
     });
   } catch (error) {
