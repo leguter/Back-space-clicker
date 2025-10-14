@@ -106,7 +106,7 @@ router.post("/claim/subscription", async (req, res) => {
     }
 
     // 2. ПЕРЕВІРКА ПІДПИСКИ ЧЕРЕЗ TELEGRAM API
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const botToken = process.env.BOT_TOKEN;
     const channelId = process.env.TELEGRAM_CHANNEL_ID; // Наприклад, '@my_channel'
 
     if (!botToken || !channelId) {
