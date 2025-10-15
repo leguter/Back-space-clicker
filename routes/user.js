@@ -128,7 +128,7 @@ router.post("/tap", async (req, res) => {
 
     res.json({
       newBalance: result.rows[0].balance,
-      added: tapPower,
+      tapPower: tapPower,
     });
   } catch (error) {
     console.error("Tap error:", error);
