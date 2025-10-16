@@ -38,12 +38,20 @@ let dbUser = await db.query("SELECT * FROM users WHERE telegram_id = $1", [teleg
 if (dbUser.rows.length === 0) {
   // Створюємо нового користувача
   dbUser = await db.query(
-    `INSERT INTO users (telegram_id, first_name, username, balance, photo_url)
-     VALUES ($1, $2, $3, 0, $4) RETURNING *`,
-    [telegramId, user.first_name, user.username, user.photo_url || null]
+    // Тепер 6 колонок відповідають 6 плейсхолдерам
+    `INSERT INTO users (telegram_id, first_name, username, balance, photo_url, tickets)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [
+      telegramId,
+      user.first_name,
+      user.username,
+      0, // $4: Початковий баланс = 0
+      user.photo_url, // $5: URL фото
+      0, // $6: Початкова кількість тікетів = 0
+    ]
   );
 } else {
-  // Оновлюємо час останнього входу і фото
+  // Оновлюємо час останнього входу і фото (ЦЕЙ БЛОК ВЖЕ ПРАВИЛЬНИЙ)
   dbUser = await db.query(
     `UPDATE users
      SET last_login_at = NOW(),
@@ -73,7 +81,8 @@ const finalUser = dbUser.rows[0];
         username:finalUser.username,
         photoUrl: finalUser.photo_url || null,
         balance: finalUser.balance,
-        isSubscribed: finalUser.isSubscribed
+        isSubscribed: finalUser.isSubscribed,
+        tickets: finalUser.tickets
       },
     });
   } catch (error) {
