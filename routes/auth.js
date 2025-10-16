@@ -54,6 +54,7 @@ if (dbUser.rows.length === 0) {
   );
 }
 
+
 const finalUser = dbUser.rows[0];
 
     // 3. Створення JWT токена
