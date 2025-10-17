@@ -249,7 +249,7 @@ router.post("/create_invoice", async (req, res) => {
   const stars = pricesInStars[booster] || 1;
 
   // 🔹 Telegram API очікує значення у “копійках” (1⭐ = 100)
-  const amount = stars * 100;
+  const amount = stars;
 
   try {
     const botToken = process.env.BOT_TOKEN;
