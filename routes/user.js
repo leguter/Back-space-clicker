@@ -244,7 +244,7 @@ router.post("/create_invoice", async (req, res) => {
   };
 
   const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
-  const amount = prices[booster] * 100; // у копійках
+  const amount = prices[booster]; // у копійках
 
   try {
     const botToken = process.env.BOT_TOKEN;
