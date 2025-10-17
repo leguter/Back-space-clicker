@@ -238,13 +238,18 @@ router.get("/tasks", async (req, res) => {
 
 router.post("/create_invoice", async (req, res) => {
   const { booster } = req.body;
-  const prices = {
-    speed: 100,
-    auto_clicker: 200,
+
+  // 💫 Вказуєш скільки ЗІРОК коштує бустер (у звичних одиницях)
+  const pricesInStars = {
+    speed: 1,          // 1 ⭐
+    auto_clicker: 2,   // 2 ⭐
   };
 
   const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
-  const amount = prices[booster]; // у копійках
+  const stars = pricesInStars[booster] || 1;
+
+  // 🔹 Telegram API очікує значення у “копійках” (1⭐ = 100)
+  const amount = stars * 100;
 
   try {
     const botToken = process.env.BOT_TOKEN;
@@ -254,15 +259,15 @@ router.post("/create_invoice", async (req, res) => {
         title,
         description: `Purchase ${title}`,
         payload: `booster_${booster}`,
-        provider_token: "", // ❗️для Telegram Stars залишай пустим
-        currency: "XTR", // Telegram Stars = XTR
-        prices: [{ label: title, amount }],
+        provider_token: "", // для Telegram Stars залишаємо пустим
+        currency: "XTR", // Telegram Stars
+        prices: [{ label: `${title}`, amount }],
       }
     );
 
     res.json({ invoice_link: response.data.result });
   } catch (err) {
-    console.error(err);
+    console.error("Create invoice error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to create invoice" });
   }
 });
