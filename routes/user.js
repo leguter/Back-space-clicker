@@ -239,8 +239,8 @@ router.get("/tasks", async (req, res) => {
 router.post("/create_invoice", async (req, res) => {
   const { booster } = req.body;
   const prices = {
-    speed: 1,
-    auto_clicker: 2,
+    speed: 100,
+    auto_clicker: 200,
   };
 
   const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
