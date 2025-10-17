@@ -117,7 +117,7 @@ router.post("/tap", async (req, res) => {
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({ message: "User not found" });
-      
+
     }
 
     const tapPower = userResult.rows[0].tap_power || 1;
@@ -233,6 +233,37 @@ router.get("/tasks", async (req, res) => {
   } catch (error) {
     console.error("Error fetching user tasks:", error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/create_invoice", async (req, res) => {
+  const { booster } = req.body;
+  const prices = {
+    speed: 50,
+    auto_clicker: 120,
+  };
+
+  const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
+  const amount = prices[booster] * 100; // у копійках
+
+  try {
+    const botToken = process.env.BOT_TOKEN;
+    const response = await axios.post(
+      `https://api.telegram.org/bot${botToken}/createInvoiceLink`,
+      {
+        title,
+        description: `Purchase ${title}`,
+        payload: `booster_${booster}`,
+        provider_token: "", // ❗️для Telegram Stars залишай пустим
+        currency: "XTR", // Telegram Stars = XTR
+        prices: [{ label: title, amount }],
+      }
+    );
+
+    res.json({ invoice_link: response.data.result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create invoice" });
   }
 });
 
