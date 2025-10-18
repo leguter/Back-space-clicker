@@ -95,29 +95,41 @@ router.post("/tap", async (req, res) => {
 // ===============================================================
 // ✅ POST /api/user/update-clicks — Ручне оновлення прогресу (для синхронізації)
 // ===============================================================
-router.post("/update-clicks", async (req, res) => {
+router.post("/update-clicks", authMiddleware, async (req, res) => {
   try {
     const { progress } = req.body;
     const { telegramId } = req.user;
 
-    if (typeof progress !== "number" || progress < 0 || progress > 1) {
+    if (typeof progress !== "number" || progress < 0) {
       return res.status(400).json({ message: "Invalid progress value" });
     }
 
-    const result = await db.query(
-      "UPDATE users SET click_progress = $1 WHERE telegram_id = $2 RETURNING click_progress",
-      [progress, telegramId]
+    // Отримуємо поточний прогрес
+    const userResult = await db.query(
+      "SELECT progress FROM users WHERE telegram_id = $1",
+      [telegramId]
     );
 
-    res.json({
-      message: "Progress updated",
-      progress: Number(result.rows[0].click_progress),
-    });
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let newProgress = userResult.rows[0].progress + progress;
+
+    if (newProgress > 1) newProgress = 1; // максимум 100%
+
+    await db.query(
+      "UPDATE users SET progress = $1 WHERE telegram_id = $2",
+      [newProgress, telegramId]
+    );
+
+    res.json({ message: "Progress updated", progress: newProgress });
   } catch (err) {
-    console.error("❌ /update-clicks error:", err);
+    console.error("❌ Update clicks error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ===============================================================
 // ✅ POST /api/user/claim-ticket — Отримати квиток після 100% прогресу
