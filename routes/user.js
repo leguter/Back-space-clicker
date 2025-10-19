@@ -51,62 +51,75 @@ router.get("/me", async (req, res) => {
 router.post("/tap", async (req, res) => {
   try {
     const { telegramId } = req.user;
-
     const userResult = await db.query(
       "SELECT tap_power, click_progress FROM users WHERE telegram_id = $1",
       [telegramId]
     );
-
-    if (userResult.rows.length === 0)
-      return res.status(404).json({ message: "User not found" });
+    if (userResult.rows.length === 0) return res.status(404).json({ message: "User not found" });
 
     const { tap_power, click_progress } = userResult.rows[0];
-    const tapPower = tap_power || 1;
+    const tapPower = Number(tap_power) || 1;
 
-    const progressIncrement = tapPower / 1000; // 1000 кліків = 1 квиток
-    const newProgress = Math.min((click_progress || 0) + progressIncrement, 1);
+    // Інкремент прогресу — один тап додає tapPower/1000
+    const progressIncrement = tapPower / 1000;
+    const current = Number(click_progress) || 0;
+    const newProgress = Math.min(current + progressIncrement, 1);
 
     const result = await db.query(
-      `
-      UPDATE users 
-      SET balance = balance + $2, click_progress = $3 
-      WHERE telegram_id = $1
-      RETURNING balance, click_progress
-      `,
+      `UPDATE users 
+       SET balance = balance + $2, click_progress = $3 
+       WHERE telegram_id = $1
+       RETURNING balance, click_progress`,
       [telegramId, tapPower, newProgress]
     );
 
-    res.json({
+    return res.json({
       newBalance: result.rows[0].balance,
       progress: Number(result.rows[0].click_progress),
       tapPower,
     });
-  } catch (error) {
-    console.error("Tap error:", error);
-    res.status(500).json({ message: "Server error during tap" });
+  } catch (err) {
+    console.error("❌ /tap error:", err);
+    return res.status(500).json({ message: "Server error during tap" });
   }
 });
 
-// ===============================================================
-// ✅ POST /api/user/update-clicks — Ручне оновлення прогресу (для синхронізації)
-// ===============================================================
+// POST /api/user/update-clicks
 router.post("/update-clicks", async (req, res) => {
   try {
-    const { progress } = req.body;
     const { telegramId } = req.user;
 
-    if (typeof progress !== "number" || isNaN(progress) || progress <= 0)
-      return res.status(400).json({ message: "Invalid progress value" });
+    // Диагностичний лог тіла — тимчасово (після налагодження можна прибрати)
+    console.log("/update-clicks body:", req.body);
 
+    // Підтримуємо два варіанти тіла: { progress: 0.001 } або { clickCount: 1 }
+    let { progress, clickCount } = req.body || {};
+
+    // Якщо прислали clickCount, перетворюємо в progress інкремент:
+    // Наприклад один клік = 1 / 1000
+    if (typeof clickCount === "number") {
+      if (!Number.isFinite(clickCount) || clickCount < 0) {
+        return res.status(400).json({ message: "Invalid clickCount value" });
+      }
+      progress = (clickCount * 1.0) / 1000;
+    }
+
+    // Тепер progress повинен бути числом > 0 (ми дозволяємо навіть дуже маленькі значення)
+    if (typeof progress !== "number" || !Number.isFinite(progress) || progress <= 0) {
+      return res.status(400).json({ message: "Invalid progress value" });
+    }
+
+    // Беремо актуальний click_progress
     const userResult = await db.query(
       "SELECT click_progress FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
-    if (userResult.rows.length === 0)
-      return res.status(404).json({ message: "User not found" });
+    if (userResult.rows.length === 0) return res.status(404).json({ message: "User not found" });
 
-    let newProgress = userResult.rows[0].click_progress + progress;
+    const current = Number(userResult.rows[0].click_progress) || 0;
+    let newProgress = current + progress;
+    if (!Number.isFinite(newProgress)) newProgress = 0;
     if (newProgress > 1) newProgress = 1;
 
     await db.query(
@@ -114,16 +127,14 @@ router.post("/update-clicks", async (req, res) => {
       [newProgress, telegramId]
     );
 
-    res.json({ message: "Progress updated", progress: newProgress });
+    return res.json({ message: "Progress updated", progress: newProgress });
   } catch (err) {
-    console.error("❌ Update clicks error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ /update-clicks error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-// ===============================================================
-// ✅ POST /api/user/claim-ticket — Отримати квиток після 100% прогресу
-// ===============================================================
+// POST /api/user/claim-ticket
 router.post("/claim-ticket", async (req, res) => {
   try {
     const { telegramId } = req.user;
@@ -133,29 +144,22 @@ router.post("/claim-ticket", async (req, res) => {
       [telegramId]
     );
 
-    if (result.rows.length === 0)
-      return res.status(404).json({ message: "User not found" });
+    if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
 
     const user = result.rows[0];
-
-    if (user.click_progress < 1)
-      return res.status(400).json({ message: "Progress not complete yet" });
+    const progress = Number(user.click_progress) || 0;
+    if (progress < 1) return res.status(400).json({ message: "Progress not complete yet" });
 
     const newTickets = (user.tickets || 0) + 1;
-
     await db.query(
       "UPDATE users SET tickets = $1, click_progress = 0 WHERE telegram_id = $2",
       [newTickets, telegramId]
     );
 
-    res.json({
-      message: "🎟️ Ticket claimed successfully!",
-      tickets: newTickets,
-      progress: 0,
-    });
+    return res.json({ message: "Ticket claimed", tickets: newTickets, progress: 0 });
   } catch (err) {
     console.error("❌ /claim-ticket error:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
