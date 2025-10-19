@@ -254,7 +254,7 @@ router.post("/create_invoice", async (req, res) => {
 
   const pricesInStars = {
     speed: 15,
-    auto_clicker: 20,
+    auto_clicker: 40,
   };
 
   const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
