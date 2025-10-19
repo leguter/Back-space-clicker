@@ -1,5 +1,3 @@
-// routes/user.js
-
 const express = require("express");
 const db = require("../db");
 const authMiddleware = require("../middleware/auth");
@@ -37,9 +35,8 @@ router.get("/me", async (req, res) => {
       [telegramId]
     );
 
-    if (userResult.rows.length === 0) {
+    if (userResult.rows.length === 0)
       return res.status(404).json({ message: "User not found" });
-    }
 
     res.json(userResult.rows[0]);
   } catch (error) {
@@ -60,14 +57,12 @@ router.post("/tap", async (req, res) => {
       [telegramId]
     );
 
-    if (userResult.rows.length === 0) {
+    if (userResult.rows.length === 0)
       return res.status(404).json({ message: "User not found" });
-    }
 
     const { tap_power, click_progress } = userResult.rows[0];
     const tapPower = tap_power || 1;
 
-    // 1 натискання додає tapPower до балансу та частинку прогресу
     const progressIncrement = tapPower / 1000; // 1000 кліків = 1 квиток
     const newProgress = Math.min((click_progress || 0) + progressIncrement, 1);
 
@@ -95,31 +90,27 @@ router.post("/tap", async (req, res) => {
 // ===============================================================
 // ✅ POST /api/user/update-clicks — Ручне оновлення прогресу (для синхронізації)
 // ===============================================================
-router.post("/update-clicks", authMiddleware, async (req, res) => {
+router.post("/update-clicks", async (req, res) => {
   try {
     const { progress } = req.body;
     const { telegramId } = req.user;
 
-    if (typeof progress !== "number" || progress < 0) {
+    if (typeof progress !== "number" || isNaN(progress) || progress <= 0)
       return res.status(400).json({ message: "Invalid progress value" });
-    }
 
-    // Отримуємо поточний прогрес
     const userResult = await db.query(
-      "SELECT progress FROM users WHERE telegram_id = $1",
+      "SELECT click_progress FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
-    if (userResult.rows.length === 0) {
+    if (userResult.rows.length === 0)
       return res.status(404).json({ message: "User not found" });
-    }
 
-    let newProgress = userResult.rows[0].progress + progress;
-
-    if (newProgress > 1) newProgress = 1; // максимум 100%
+    let newProgress = userResult.rows[0].click_progress + progress;
+    if (newProgress > 1) newProgress = 1;
 
     await db.query(
-      "UPDATE users SET progress = $1 WHERE telegram_id = $2",
+      "UPDATE users SET click_progress = $1 WHERE telegram_id = $2",
       [newProgress, telegramId]
     );
 
@@ -129,7 +120,6 @@ router.post("/update-clicks", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // ===============================================================
 // ✅ POST /api/user/claim-ticket — Отримати квиток після 100% прогресу
@@ -143,15 +133,13 @@ router.post("/claim-ticket", async (req, res) => {
       [telegramId]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0)
       return res.status(404).json({ message: "User not found" });
-    }
 
     const user = result.rows[0];
 
-    if (user.click_progress < 1) {
+    if (user.click_progress < 1)
       return res.status(400).json({ message: "Progress not complete yet" });
-    }
 
     const newTickets = (user.tickets || 0) + 1;
 
@@ -184,26 +172,22 @@ router.post("/claim/subscription", async (req, res) => {
       [telegramId, taskId]
     );
 
-    if (existingTaskResult.rows.length > 0) {
+    if (existingTaskResult.rows.length > 0)
       return res.status(409).json({ message: "Нагорода вже отримана." });
-    }
 
     const botToken = process.env.BOT_TOKEN;
     const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
-    if (!botToken || !channelId) {
+    if (!botToken || !channelId)
       return res.status(500).json({ message: "BOT_TOKEN або TELEGRAM_CHANNEL_ID не задані." });
-    }
 
     const apiUrl = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${channelId}&user_id=${telegramId}`;
-
     const response = await axios.get(apiUrl);
     const memberStatus = response.data.result?.status;
     const isSubscribed = ["member", "administrator", "creator"].includes(memberStatus);
 
-    if (!isSubscribed) {
+    if (!isSubscribed)
       return res.status(403).json({ message: "Ви не підписані на канал." });
-    }
 
     const client = await db.connect();
     try {
@@ -251,7 +235,7 @@ router.get("/tasks", async (req, res) => {
       [telegramId]
     );
 
-    res.json({ completedTasks: result.rows.map(row => row.task_id) });
+    res.json({ completedTasks: result.rows.map((row) => row.task_id) });
   } catch (error) {
     console.error("Error fetching user tasks:", error);
     res.status(500).json({ message: "Server error" });
@@ -271,7 +255,7 @@ router.post("/create_invoice", async (req, res) => {
 
   const title = booster === "speed" ? "x2 Speed Booster" : "Auto Clicker";
   const stars = pricesInStars[booster] || 1;
-  const amount = stars; // 1⭐ = 1 одиниця (Telegram сам множить на 100)
+  const amount = stars;
 
   try {
     const botToken = process.env.BOT_TOKEN;
@@ -302,7 +286,8 @@ router.post("/referral/register", async (req, res) => {
     const { telegramId } = req.user;
     const { referrerId } = req.body;
 
-    if (!referrerId) return res.status(400).json({ message: "referrerId is required" });
+    if (!referrerId)
+      return res.status(400).json({ message: "referrerId is required" });
     if (telegramId === Number(referrerId))
       return res.status(400).json({ message: "You cannot refer yourself" });
 
