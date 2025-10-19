@@ -9,37 +9,58 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ===============================================================
-// ✅ GET /api/raffle/:id — Отримати інформацію про розіграш
+// ✅ GET /api/raffle/:idOrSlug — Отримати інформацію про розіграш
 // ===============================================================
-router.get("/:id", async (req, res) => {
+router.get("/:idOrSlug", async (req, res) => {
   try {
-    const { id } = req.params;
+    const { idOrSlug } = req.params;
+    let raffleResult;
 
-    const raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    const id = parseInt(idOrSlug, 10);
+    if (!isNaN(id)) {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    } else {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE slug = $1", [idOrSlug]);
+    }
+
     if (raffleResult.rows.length === 0)
       return res.status(404).json({ message: "Raffle not found" });
 
     const raffle = raffleResult.rows[0];
+
     const participantsResult = await db.query(
       "SELECT COUNT(*) FROM raffle_participants WHERE raffle_id = $1",
-      [id]
+      [raffle.id]
     );
 
     raffle.participants = parseInt(participantsResult.rows[0].count, 10);
     res.json(raffle);
   } catch (err) {
-    console.error("❌ Error in GET /raffle/:id:", err);
+    console.error("❌ Error in GET /raffle/:idOrSlug:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 // ===============================================================
-// 🎟️ POST /api/raffle/:id/join — Участь у розіграші
+// 🎟️ POST /api/raffle/:idOrSlug/join — Участь у розіграші
 // ===============================================================
-router.post("/:id/join", async (req, res) => {
+router.post("/:idOrSlug/join", async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const { id } = req.params;
+    const { idOrSlug } = req.params;
+    let raffleResult;
+
+    const id = parseInt(idOrSlug, 10);
+    if (!isNaN(id)) {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    } else {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE slug = $1", [idOrSlug]);
+    }
+
+    if (raffleResult.rows.length === 0)
+      return res.status(404).json({ message: "Raffle not found" });
+
+    const raffle = raffleResult.rows[0];
 
     // 1️⃣ Отримати користувача
     const userResult = await db.query(
@@ -52,30 +73,23 @@ router.post("/:id/join", async (req, res) => {
 
     const userTickets = userResult.rows[0].tickets;
 
-    // 2️⃣ Отримати розіграш
-    const raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
-    if (raffleResult.rows.length === 0)
-      return res.status(404).json({ message: "Raffle not found" });
-
-    const raffle = raffleResult.rows[0];
-
     if (new Date(raffle.ends_at) < new Date())
       return res.status(400).json({ message: "Raffle already ended" });
 
-    // 3️⃣ Перевірити, чи користувач вже бере участь
+    // 2️⃣ Перевірити, чи користувач вже бере участь
     const existing = await db.query(
       "SELECT 1 FROM raffle_participants WHERE raffle_id = $1 AND telegram_id = $2",
-      [id, telegramId]
+      [raffle.id, telegramId]
     );
 
     if (existing.rows.length > 0)
       return res.status(400).json({ message: "Already participating" });
 
-    // 4️⃣ Перевірити кількість тікетів
+    // 3️⃣ Перевірити кількість тікетів
     if (userTickets < raffle.cost)
       return res.status(400).json({ message: "Not enough tickets" });
 
-    // 5️⃣ Відняти тікети та записати участь
+    // 4️⃣ Відняти тікети та записати участь
     await db.query("UPDATE users SET tickets = tickets - $1 WHERE telegram_id = $2", [
       raffle.cost,
       telegramId,
@@ -83,40 +97,48 @@ router.post("/:id/join", async (req, res) => {
 
     await db.query(
       "INSERT INTO raffle_participants (raffle_id, telegram_id) VALUES ($1, $2)",
-      [id, telegramId]
+      [raffle.id, telegramId]
     );
 
     res.json({ message: "Participation confirmed ✅" });
   } catch (err) {
-    console.error("❌ Error in POST /raffle/:id/join:", err);
+    console.error("❌ Error in POST /raffle/:idOrSlug/join:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 // ===============================================================
-// 🏆 POST /api/raffle/:id/end — Завершити розіграш (адмін або cron)
+// 🏆 POST /api/raffle/:idOrSlug/end — Завершити розіграш (адмін або cron)
 // ===============================================================
-router.post("/:id/end", async (req, res) => {
+router.post("/:idOrSlug/end", async (req, res) => {
   try {
-    const { id } = req.params;
+    const { idOrSlug } = req.params;
+    let raffleResult;
 
-    const raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    const id = parseInt(idOrSlug, 10);
+    if (!isNaN(id)) {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    } else {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE slug = $1", [idOrSlug]);
+    }
+
     if (raffleResult.rows.length === 0)
       return res.status(404).json({ message: "Raffle not found" });
 
     const raffle = raffleResult.rows[0];
+
     if (raffle.ended)
       return res.status(400).json({ message: "Raffle already ended" });
 
     // 1️⃣ Отримати учасників
     const participantsResult = await db.query(
       "SELECT telegram_id FROM raffle_participants WHERE raffle_id = $1",
-      [id]
+      [raffle.id]
     );
     const participants = participantsResult.rows;
 
     if (participants.length === 0) {
-      await db.query("UPDATE raffles SET ended = true WHERE id = $1", [id]);
+      await db.query("UPDATE raffles SET ended = true WHERE id = $1", [raffle.id]);
       return res.json({ message: "No participants — raffle ended with no winner" });
     }
 
@@ -127,25 +149,32 @@ router.post("/:id/end", async (req, res) => {
     // 3️⃣ Зберегти результат
     await db.query(
       "UPDATE raffles SET ended = true, winner_id = $1 WHERE id = $2",
-      [winner, id]
+      [winner, raffle.id]
     );
 
     res.json({ message: "Raffle ended 🎉", winner });
   } catch (err) {
-    console.error("❌ Error in POST /raffle/:id/end:", err);
+    console.error("❌ Error in POST /raffle/:idOrSlug/end:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 // ===============================================================
-// 🪩 GET /api/raffle/:id/result — Отримати результат розіграшу
+// 🪩 GET /api/raffle/:idOrSlug/result — Отримати результат розіграшу
 // ===============================================================
-router.get("/:id/result", async (req, res) => {
+router.get("/:idOrSlug/result", async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const { id } = req.params;
+    const { idOrSlug } = req.params;
+    let raffleResult;
 
-    const raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    const id = parseInt(idOrSlug, 10);
+    if (!isNaN(id)) {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE id = $1", [id]);
+    } else {
+      raffleResult = await db.query("SELECT * FROM raffles WHERE slug = $1", [idOrSlug]);
+    }
+
     if (raffleResult.rows.length === 0)
       return res.status(404).json({ message: "Raffle not found" });
 
@@ -155,7 +184,7 @@ router.get("/:id/result", async (req, res) => {
 
     const isParticipant = await db.query(
       "SELECT 1 FROM raffle_participants WHERE raffle_id = $1 AND telegram_id = $2",
-      [id, telegramId]
+      [raffle.id, telegramId]
     );
 
     if (isParticipant.rows.length === 0)
@@ -164,7 +193,7 @@ router.get("/:id/result", async (req, res) => {
     const status = raffle.winner_id === telegramId ? "won" : "lost";
     res.json({ status });
   } catch (err) {
-    console.error("❌ Error in GET /raffle/:id/result:", err);
+    console.error("❌ Error in GET /raffle/:idOrSlug/result:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
