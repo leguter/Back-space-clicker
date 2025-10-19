@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
+const raffleRoutes = require("./routes/raffle");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,6 +35,7 @@ app.use(express.json()); // Дозволяє серверу читати JSON з
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/raffle", raffleRoutes);
 
 // Проста перевірка, що сервер працює
 app.get("/", (req, res) => {
