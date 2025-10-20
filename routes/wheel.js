@@ -12,7 +12,7 @@ router.use(authMiddleware);
 router.post("/create_invoice", async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const spinPrice = 10; // вартість одного спіну у зірках
+    const spinPrice = 1; // вартість одного спіну у зірках
 
     const botToken = process.env.BOT_TOKEN;
 
