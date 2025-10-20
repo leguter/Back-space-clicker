@@ -14,7 +14,7 @@ router.post("/create_invoice", async (req, res) => {
     const { telegramId } = req.user;
 
     // ❗️ ВИПРАВЛЕНО: Ціна 10 зірок, як на кнопці
-    const spinPrice = 10; // 10 реальних Telegram Stars (XTR)
+    const spinPrice = 1; // 10 реальних Telegram Stars (XTR)
 
     const botToken = process.env.BOT_TOKEN;
 
