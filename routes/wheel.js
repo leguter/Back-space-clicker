@@ -12,6 +12,7 @@ router.use(authMiddleware);
 router.post("/create_invoice", async (req, res) => {
   try {
     const { telegramId } = req.user;
+
     const spinPrice = 1; // ❗️ 10 реальних Telegram Stars (XTR)
 
     const botToken = process.env.BOT_TOKEN;
