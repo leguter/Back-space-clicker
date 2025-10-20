@@ -7,46 +7,62 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ===============================================================
-// 🧾 GET /api/wheel/invoice — створення Telegram invoice для оплати спіну
+// 🧾 POST /api/wheel/create_invoice — створюємо меню оплати зірками
 // ===============================================================
-router.get("/invoice", async (req, res) => {
+router.post("/create_invoice", async (req, res) => {
   try {
     const { telegramId } = req.user;
+    const spinPrice = 10; // вартість одного спіну у зірках
 
-    // Дані для інвойсу Telegram Stars
-    const invoice = {
-      title: "Wheel of Fortune Spin",
-      description: "Spin the wheel for awesome rewards!",
-      payload: `wheel_spin_${telegramId}`,
-      currency: "XTR", // Telegram Stars
-      prices: [{ label: "Spin", amount: 1 }], // 10 зірок
-    };
+    const botToken = process.env.BOT_TOKEN;
 
-    res.json({ success: true, invoice });
+    const response = await axios.post(
+      `https://api.telegram.org/bot${botToken}/createInvoiceLink`,
+      {
+        title: "Wheel of Fortune Spin",
+        description: "Spin the wheel for awesome rewards!",
+        payload: `wheel_spin_${telegramId}`,
+        provider_token: "", // для внутрішніх зірок
+        currency: "XTR",
+        prices: [{ label: "Spin", amount: spinPrice }],
+      }
+    );
+
+    res.json({ success: true, invoice_link: response.data.result });
   } catch (err) {
-    console.error("Invoice error:", err);
+    console.error("Create wheel invoice error:", err.response?.data || err.message);
     res.status(500).json({ success: false, message: "Failed to create invoice" });
   }
 });
 
 // ===============================================================
-// 🎡 POST /api/wheel/spin — логіка обертання після оплати
+// 🎡 POST /api/wheel/spin — викликається після успішної оплати
 // ===============================================================
 router.post("/spin", async (req, res) => {
   try {
     const { telegramId } = req.user;
+    const spinPrice = 10; // вартість спіну
 
-    // 1️⃣ Перевіряємо користувача
+    // Перевіряємо баланс користувача
     const userResult = await db.query(
-      "SELECT telegram_id FROM users WHERE telegram_id = $1",
+      "SELECT stars FROM users WHERE telegram_id = $1",
       [telegramId]
     );
-
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // 2️⃣ Випадковий шанс (98% квиток, 1% NFT, 1% зірки)
+    if (userResult.rows[0].stars < spinPrice) {
+      return res.status(400).json({ success: false, message: "Not enough stars" });
+    }
+
+    // Віднімаємо зірки за спін
+    await db.query("UPDATE users SET stars = stars - $1 WHERE telegram_id = $2", [
+      spinPrice,
+      telegramId,
+    ]);
+
+    // Випадковий шанс для нагороди
     const roll = Math.random() * 100;
     let reward = { type: "raffle_ticket", value: 1 };
 
@@ -54,11 +70,8 @@ router.post("/spin", async (req, res) => {
       reward = { type: "nft", value: "Mystery Box" };
     } else if (roll >= 99) {
       reward = { type: "stars", value: 5 };
-
-      // +5 зірок користувачу
-      await db.query("UPDATE users SET stars = stars + 5 WHERE telegram_id = $1", [
-        telegramId,
-      ]);
+      // додаємо зірки користувачу
+      await db.query("UPDATE users SET stars = stars + 5 WHERE telegram_id = $1", [telegramId]);
     } else {
       // +1 квиток
       await db.query(
@@ -67,14 +80,14 @@ router.post("/spin", async (req, res) => {
       );
     }
 
-    // 3️⃣ Запис у таблицю user_spins (історія)
+    // Записуємо історію спіну
     await db.query(
       `INSERT INTO user_spins (user_id, reward_type, reward_value)
        VALUES ($1, $2, $3)`,
       [telegramId, reward.type, reward.value.toString()]
     );
 
-    // 4️⃣ Повертаємо оновлений баланс
+    // Повертаємо оновлений баланс
     const updatedUser = await db.query(
       "SELECT stars, raffle_tickets FROM users WHERE telegram_id = $1",
       [telegramId]
