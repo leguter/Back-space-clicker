@@ -2,27 +2,27 @@ const express = require("express");
 const db = require("../db");
 const authMiddleware = require("../middleware/auth");
 const axios = require("axios");
-require("dotenv").config();
 
 const router = express.Router();
 router.use(authMiddleware);
 
 // ===============================================================
-// 💰 GET /api/wheel/invoice — створити платіж для 10 Telegram Stars
+// 🧾 GET /api/wheel/invoice — створення Telegram invoice для оплати спіну
 // ===============================================================
 router.get("/invoice", async (req, res) => {
   try {
     const { telegramId } = req.user;
 
-    const invoiceData = {
-      title: "🎡 Wheel of Fortune Spin",
-      description: "Try your luck and win tickets, NFTs, or stars!",
-      payload: `wheel_spin_${telegramId}_${Date.now()}`,
+    // Дані для інвойсу Telegram Stars
+    const invoice = {
+      title: "Wheel of Fortune Spin",
+      description: "Spin the wheel for awesome rewards!",
+      payload: `wheel_spin_${telegramId}`,
       currency: "XTR", // Telegram Stars
-      prices: [{ label: "Spin", amount: 1 }], // 10 stars
+      prices: [{ label: "Spin", amount: 1 }], // 10 зірок
     };
 
-    res.json({ success: true, invoice: invoiceData });
+    res.json({ success: true, invoice });
   } catch (err) {
     console.error("Invoice error:", err);
     res.status(500).json({ success: false, message: "Failed to create invoice" });
@@ -30,21 +30,23 @@ router.get("/invoice", async (req, res) => {
 });
 
 // ===============================================================
-// 🎡 POST /api/wheel/spin — обробити виграш після успішної оплати
+// 🎡 POST /api/wheel/spin — логіка обертання після оплати
 // ===============================================================
 router.post("/spin", async (req, res) => {
   try {
     const { telegramId } = req.user;
 
-    // Перевірка існування користувача
+    // 1️⃣ Перевіряємо користувача
     const userResult = await db.query(
       "SELECT telegram_id FROM users WHERE telegram_id = $1",
       [telegramId]
     );
-    if (userResult.rows.length === 0)
-      return res.status(404).json({ success: false, message: "User not found" });
 
-    // 🎲 Генеруємо випадковий результат
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // 2️⃣ Випадковий шанс (98% квиток, 1% NFT, 1% зірки)
     const roll = Math.random() * 100;
     let reward = { type: "raffle_ticket", value: 1 };
 
@@ -52,24 +54,27 @@ router.post("/spin", async (req, res) => {
       reward = { type: "nft", value: "Mystery Box" };
     } else if (roll >= 99) {
       reward = { type: "stars", value: 5 };
+
+      // +5 зірок користувачу
       await db.query("UPDATE users SET stars = stars + 5 WHERE telegram_id = $1", [
         telegramId,
       ]);
     } else {
+      // +1 квиток
       await db.query(
         "UPDATE users SET raffle_tickets = raffle_tickets + 1 WHERE telegram_id = $1",
         [telegramId]
       );
     }
 
-    // 🧾 Запис у історію
+    // 3️⃣ Запис у таблицю user_spins (історія)
     await db.query(
       `INSERT INTO user_spins (user_id, reward_type, reward_value)
        VALUES ($1, $2, $3)`,
       [telegramId, reward.type, reward.value.toString()]
     );
 
-    // ⚙️ Отримати оновлений баланс
+    // 4️⃣ Повертаємо оновлений баланс
     const updatedUser = await db.query(
       "SELECT stars, raffle_tickets FROM users WHERE telegram_id = $1",
       [telegramId]
