@@ -309,7 +309,29 @@ router.post("/:idOrSlug/join", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+router.get("/active", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM raffles WHERE ended = false ORDER BY ends_at ASC LIMIT 1"
+    );
 
+    if (result.rows.length === 0)
+      return res.status(404).json({ message: "No active raffle" });
+
+    const raffle = result.rows[0];
+
+    const participantsResult = await db.query(
+      "SELECT COUNT(*) FROM raffle_participants WHERE raffle_id = $1",
+      [raffle.id]
+    );
+    raffle.participants = parseInt(participantsResult.rows[0].count, 10);
+
+    res.json(raffle);
+  } catch (err) {
+    console.error("❌ Error in GET /raffle/active:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 // ===============================================================
 // 🏆 POST /api/raffle/:idOrSlug/end — Завершити розіграш вручну
 // ===============================================================
@@ -462,29 +484,6 @@ cron.schedule("*/1 * * * *", async () => {
     }
   } catch (err) {
     console.error("❌ Помилка в cron-задачі:", err);
-  }
-});
-router.get("/active", async (req, res) => {
-  try {
-    const result = await db.query(
-      "SELECT * FROM raffles WHERE ended = false ORDER BY ends_at ASC LIMIT 1"
-    );
-
-    if (result.rows.length === 0)
-      return res.status(404).json({ message: "No active raffle" });
-
-    const raffle = result.rows[0];
-
-    const participantsResult = await db.query(
-      "SELECT COUNT(*) FROM raffle_participants WHERE raffle_id = $1",
-      [raffle.id]
-    );
-    raffle.participants = parseInt(participantsResult.rows[0].count, 10);
-
-    res.json(raffle);
-  } catch (err) {
-    console.error("❌ Error in GET /raffle/active:", err);
-    res.status(500).json({ message: "Server error" });
   }
 });
 module.exports = router;
