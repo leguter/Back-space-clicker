@@ -57,35 +57,34 @@ router.post("/spin", async (req, res) => {
     // ❗️ ОСЬ ТУТ ВАШІ НОВІ ШАНСИ:
 
     // 80% Ticket (діапазон 0 - 79.99)
-if (roll < 90) {
-  // 90% NFT
-  reward = { type: "nft", value: "Mystery Box" };
-  // ... (логіка NFT, якщо потрібна)
-} 
-else if (roll < 95) {
-  // 5% квиток
-  reward = { type: "raffle_ticket", value: 1 };
-  await db.query(
-    "UPDATE users SET tickets = tickets + 1 WHERE telegram_id = $1",
-    [telegramId]
-  );
-} 
-else if (roll < 98) {
-  // 3% буст
-  reward = { type: "boost", value: "x2 Clicks" };
-  await db.query(
-    "UPDATE users SET tap_power = tap_power + 2 WHERE telegram_id = $1",
-    [telegramId]
-  );
-} 
-else {
-  // 2% зірки
-  reward = { type: "stars", value: 5 };
-  await db.query(
-    "UPDATE users SET balance = balance + 5 WHERE telegram_id = $1",
-    [telegramId]
-  );
-}
+    if (roll < 80) {
+      reward = { type: "raffle_ticket", value: 1 };
+      await db.query(
+        "UPDATE users SET tickets = tickets + 1 WHERE telegram_id = $1",
+        [telegramId]
+      );
+    } 
+    // 18% Boost (діапазон 80 - 97.99)
+    else if (roll < 98) { // (80 + 18 = 98)
+      reward = { type: "boost", value: "x2 Clicks" };
+      await db.query(
+        "UPDATE users SET tap_power = tap_power +2 2 WHERE telegram_id = $1",
+        [telegramId]
+      );
+    } 
+    // 1% Stars (діапазон 98 - 98.99)
+    else if (roll < 99) { // (98 + 1 = 99)
+      reward = { type: "stars", value: 5 };
+      await db.query(
+        "UPDATE users SET balance = balance + 5 WHERE telegram_id = $1",
+        [telegramId]
+      );
+    } 
+    // 1% NFT (діапазон 99 - 99.99)
+    else {
+      reward = { type: "nft", value: "Mystery Box" };
+      // ... (логіка NFT, якщо потрібна)
+    }
 
     // Записуємо історію спіну
     await db.query(
