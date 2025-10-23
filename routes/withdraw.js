@@ -7,84 +7,85 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ===============================================================
-// 💫 POST /api/withdraw/request — створення заявки на вивід зірок
+// 🪙 POST /api/withdraw/request — створення заявки на вивід
 // ===============================================================
 router.post("/request", async (req, res) => {
   try {
     const { telegramId } = req.user;
     const { stars, clicks } = req.body;
 
-    // 1️⃣ Перевірка кількості рефералів
-    const refResult = await db.query(
-      "SELECT COUNT(*) FROM users WHERE invited_by = $1",
-      [telegramId]
-    );
-    const refCount = parseInt(refResult.rows[0].count);
-
-    if (refCount < 5) {
-      return res.json({
-        success: false,
-        message: "Для виводу потрібно мати мінімум 5 рефералів.",
-      });
-    }
-
-    // 2️⃣ Перевірка балансу кліків
+    // 1️⃣ Отримати користувача
     const userResult = await db.query(
-      "SELECT clicks FROM users WHERE telegram_id = $1",
+      "SELECT username, balance, referrals_count, clicks FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
     if (userResult.rows.length === 0) {
-      return res.json({ success: false, message: "Користувач не знайдений." });
+      return res.status(404).json({ success: false, message: "Користувач не знайдений" });
     }
 
-    const userClicks = parseInt(userResult.rows[0].clicks);
-    if (userClicks < clicks) {
-      return res.json({
+    const user = userResult.rows[0];
+
+    // 2️⃣ Перевірка рефералів
+    if (user.referrals_count < 5) {
+      return res.status(400).json({
         success: false,
-        message: "Недостатньо кліків для обміну.",
+        message: "❗ Для виводу потрібно мати мінімум 5 рефералів",
       });
     }
 
-    // 3️⃣ Списуємо кліки з балансу
+    // 3️⃣ Перевірка кліків
+    if (user.clicks < clicks) {
+      return res.status(400).json({
+        success: false,
+        message: "❗ Недостатньо кліків для цієї операції",
+      });
+    }
+
+    // 4️⃣ Оновити кількість кліків
     await db.query(
       "UPDATE users SET clicks = clicks - $1 WHERE telegram_id = $2",
       [clicks, telegramId]
     );
 
-    // 4️⃣ Створюємо заявку в базі
-    const insertResult = await db.query(
-      `INSERT INTO withdraw_requests (telegram_id, stars, clicks, status, created_at)
-       VALUES ($1, $2, $3, 'pending', NOW())
-       RETURNING id`,
+    // 5️⃣ Створити запис у таблиці withdrawals
+    await db.query(
+      `INSERT INTO withdrawals (telegram_id, stars, clicks, status)
+       VALUES ($1, $2, $3, 'pending')`,
       [telegramId, stars, clicks]
     );
 
-    const requestId = insertResult.rows[0].id;
-
-    // 5️⃣ Відправляємо повідомлення модераторам у Telegram
+    // 6️⃣ Надіслати повідомлення в Telegram модераторам
     const botToken = process.env.BOT_TOKEN;
-    const modChatId = process.env.MOD_CHAT_ID; // ⚠️ додай у .env
+    const adminChatId = process.env.ADMIN_CHAT_ID;
 
-    const text = `💫 <b>Нова заявка на вивід</b>
-👤 Користувач: <code>${telegramId}</code>
-⭐ Зірки: <b>${stars}</b>
-👆 Кліки: <b>${clicks.toLocaleString()}</b>
-🆔 ID заявки: <code>${requestId}</code>`;
+    if (!botToken || !adminChatId) {
+      console.error("BOT_TOKEN або ADMIN_CHAT_ID не вказано у .env");
+    } else {
+      const username = user.username ? `@${user.username}` : "—";
 
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      chat_id: modChatId,
-      text,
-      parse_mode: "HTML",
-    });
+      const message = `
+📬 *Нова заявка на вивід*
 
-    res.json({ success: true, message: "Заявка успішно створена!" });
+👤 *Користувач:* ${username}
+🆔 *Telegram ID:* ${telegramId}
+⭐ *Stars:* ${stars}
+🖱 *Кліків списано:* ${clicks.toLocaleString()}
+
+Статус: 🔸 очікує підтвердження
+`;
+
+      await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        chat_id: adminChatId,
+        text: message,
+        parse_mode: "Markdown",
+      });
+    }
+
+    res.json({ success: true, message: "✅ Заявка створена! Очікуйте підтвердження." });
   } catch (err) {
     console.error("Withdraw request error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Помилка сервера при створенні заявки.",
-    });
+    res.status(500).json({ success: false, message: "Помилка сервера при створенні заявки" });
   }
 });
 
