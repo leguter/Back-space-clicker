@@ -197,9 +197,9 @@ router.post("/claim/subscription", async (req, res) => {
     try {
       await client.query("BEGIN");
 
-      
+
       const updateUserResult = await client.query(
-        "UPDATE users SET tap_power = tap_power * 2, tickets = COALESCE(tickets, 0) + 2 WHERE telegram_id = $1 RETURNING tap_power, tickets",
+        "UPDATE users SET tap_power = tap_power + 2, tickets = COALESCE(tickets, 0) + 2 WHERE telegram_id = $1 RETURNING tap_power, tickets",
         [telegramId]
       );
 

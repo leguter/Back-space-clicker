@@ -68,7 +68,7 @@ router.post("/spin", async (req, res) => {
     else if (roll < 98) { // (80 + 18 = 98)
       reward = { type: "boost", value: "x2 Clicks" };
       await db.query(
-        "UPDATE users SET tap_power = tap_power * 2 WHERE telegram_id = $1",
+        "UPDATE users SET tap_power = tap_power + 2 WHERE telegram_id = $1",
         [telegramId]
       );
     } 
