@@ -7,7 +7,7 @@ const userRoutes = require("./routes/user");
 const raffleRoutes = require("./routes/raffle");
 const wheelRoutes = require("./routes/wheel");
 
-
+const withdrawRoutes = require("./routes/withdraw");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -39,6 +39,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/raffle", raffleRoutes);
 app.use("/api/wheel", wheelRoutes);
+app.use("/api/withdraw", withdrawRoutes);
 
 // Проста перевірка, що сервер працює
 app.get("/", (req, res) => {
