@@ -12,14 +12,15 @@ router.use(authMiddleware);
 router.post("/request", async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const { stars, clicks } = req.body;
+    const { stars, clicks } = req.body; // 'clicks' тут - це сума з запиту, це ОК
 
     // 1️⃣ Отримати користувача
+    // ❗️ ЗМІНА 1: 'clicks' видалено з запиту, бо такої колонки немає.
+    // Ми вже вибираємо 'balance'.
     const userResult = await db.query(
       `SELECT
          username,
          balance,
-         clicks,
          (SELECT COUNT(*)
            FROM referrals
            WHERE referrer_telegram_id = users.telegram_id
@@ -28,6 +29,7 @@ router.post("/request", async (req, res) => {
        WHERE telegram_id = $1`,
       [telegramId]
     );
+
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: "Користувач не знайдений" });
     }
@@ -42,9 +44,9 @@ router.post("/request", async (req, res) => {
       });
     }
 
-
     // 3️⃣ Перевірка кліків
-    if (user.clicks < clicks) {
+    // ❗️ ЗМІНА 2: Перевіряємо 'user.balance' замість 'user.clicks'
+    if (user.balance < clicks) {
       return res.status(400).json({
         success: false,
         message: "❗ Недостатньо кліків для цієї операції",
@@ -52,8 +54,9 @@ router.post("/request", async (req, res) => {
     }
 
     // 4️⃣ Оновити кількість кліків
+    // ❗️ ЗМІНА 3: Оновлюємо 'balance' замість 'clicks'
     await db.query(
-      "UPDATE users SET clicks = clicks - $1 WHERE telegram_id = $2",
+      "UPDATE users SET balance = balance - $1 WHERE telegram_id = $2",
       [clicks, telegramId]
     );
 
