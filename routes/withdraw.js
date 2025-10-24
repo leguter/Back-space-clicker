@@ -34,6 +34,7 @@ router.post("/request", async (req, res) => {
       });
     }
 
+    
     // 3️⃣ Перевірка кліків
     if (user.clicks < clicks) {
       return res.status(400).json({
