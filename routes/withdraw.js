@@ -27,7 +27,7 @@ router.post("/request", async (req, res) => {
     const user = userResult.rows[0];
 
     // 2️⃣ Перевірка рефералів
-    if (user.referrals_count < 5) {
+    if (user.referrals < 5) {
       return res.status(400).json({
         success: false,
         message: "❗ Для виводу потрібно мати мінімум 5 рефералів",
