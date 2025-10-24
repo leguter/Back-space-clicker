@@ -16,10 +16,18 @@ router.post("/request", async (req, res) => {
 
     // 1️⃣ Отримати користувача
     const userResult = await db.query(
-      "SELECT username, balance, referrals, clicks FROM users WHERE telegram_id = $1",
+      `SELECT
+         username,
+         balance,
+         clicks,
+         (SELECT COUNT(*)
+           FROM referrals
+           WHERE referrer_telegram_id = users.telegram_id
+         ) AS referrals
+       FROM users
+       WHERE telegram_id = $1`,
       [telegramId]
     );
-
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: "Користувач не знайдений" });
     }
