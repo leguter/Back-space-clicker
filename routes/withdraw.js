@@ -16,7 +16,7 @@ router.post("/request", async (req, res) => {
 
     // 1️⃣ Отримати користувача
     const userResult = await db.query(
-      "SELECT username, balance, referrals_count, clicks FROM users WHERE telegram_id = $1",
+      "SELECT username, balance, referrals, clicks FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
@@ -34,7 +34,7 @@ router.post("/request", async (req, res) => {
       });
     }
 
-    
+
     // 3️⃣ Перевірка кліків
     if (user.clicks < clicks) {
       return res.status(400).json({
