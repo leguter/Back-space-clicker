@@ -143,8 +143,8 @@ router.post("/", async (req, res) => {
         // Створюємо нового користувача (реферала)
         // Якщо він прийшов за посиланням, даємо йому 1 тікет і записуємо, хто його запросив
         const newUserQuery = `
-          INSERT INTO users (telegram_id, first_name, username, balance, photo_url, tickets, referred_by)
-          VALUES ($1, $2, $3, 0, $4, $5, $6)
+          INSERT INTO users (telegram_id, first_name, username, balance, photo_url, tickets, referred_by, internal_stars)
+          VALUES ($1, $2, $3, 0, $4, $5, $6, $7)
           RETURNING *`;
         
         const newUserValues = [
@@ -154,6 +154,7 @@ router.post("/", async (req, res) => {
           user.photo_url,
           referrerId ? 2 : 0, // 1 тікет, якщо є реферер, інакше 0
           referrerId || null,  // ID реферера або NULL
+          internal_stars || 0,
         ];
 
         const newUserResult = await client.query(newUserQuery, newUserValues);
