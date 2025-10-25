@@ -18,7 +18,7 @@ router.post("/create_invoice", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid amount" });
 
     const botToken = process.env.BOT_TOKEN;
-    const providerToken = process.env.PROVIDER_TOKEN; // ⚠️ Токен вашого платіжного провайдера
+    // const providerToken = process.env.PROVIDER_TOKEN; // ⚠️ НЕ ПОТРІБЕН для XTR
 
     const payload = `deposit_${telegramId}_${amount}_${Date.now()}`;
 
@@ -28,9 +28,9 @@ router.post("/create_invoice", async (req, res) => {
         title: "Deposit Stars",
         description: `Deposit ${amount}⭐ to your balance`,
         payload,
-        provider_token: providerToken,
+        // provider_token: providerToken, // ⛔️ Видалено, бо конфліктує з XTR
         currency: "XTR",
-        prices: [{ label: "Deposit", amount }],
+        prices: [{ label: "Deposit", amount }], // 'amount' тут - це кількість зірок
       }
     );
 
@@ -46,14 +46,15 @@ router.post("/create_invoice", async (req, res) => {
 });
 
 // ==============================
-// Підтвердження оплати
+// Підтвердження оплати (ВИПРАВЛЕНО)
 // ==============================
 router.post("/complete", authMiddleware, async (req, res) => {
   try {
     const { telegramId } = req.user;
     const { payload } = req.body;
 
-    if (!payload) return res.status(400).json({ success: false, message: "Payload missing" });
+    if (!payload)
+      return res.status(400).json({ success: false, message: "Payload missing" });
 
     // 🔹 Тут треба перевірити, чи платіж дійсно успішний
     // ⚠️ Якщо у вас немає webhook, треба вручну перевіряти через Telegram API getUpdates
@@ -77,17 +78,24 @@ router.post("/complete", authMiddleware, async (req, res) => {
 
     const totalStars = amount + (isFirstDeposit ? bonus : 0);
 
-    await db.query(
-      "UPDATE users SET internal_stars = internal_stars + $1 WHERE telegram_id = $2",
+    // === 🟢 ГОЛОВНЕ ВИПРАВЛЕННЯ ТУТ 🟢 ===
+    // Ми оновлюємо баланс і одразу просимо БД повернути нове (оновлене) значення
+    const updateRes = await db.query(
+      "UPDATE users SET internal_stars = internal_stars + $1 WHERE telegram_id = $2 RETURNING internal_stars",
       [totalStars, telegramId]
     );
 
+    // Отримуємо актуальний загальний баланс з відповіді БД
+    const newTotalBalance = updateRes.rows[0].internal_stars;
+
+    // Зберігаємо історію поповнення
     await db.query(
       "INSERT INTO deposits (telegram_id, amount, bonus, total_added) VALUES ($1,$2,$3,$4)",
       [telegramId, amount, isFirstDeposit ? bonus : 0, totalStars]
     );
 
-    res.json({ success: true, internal_stars: totalStars });
+    // Повертаємо на фронтенд новий ЗАГАЛЬНИЙ баланс
+    res.json({ success: true, internal_stars: newTotalBalance });
   } catch (err) {
     console.error("Complete deposit error:", err);
     res.status(500).json({ success: false, message: "Server error" });
