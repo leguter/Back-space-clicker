@@ -23,6 +23,7 @@ router.get("/me", async (req, res) => {
         balance, 
         tap_power, 
         tickets,
+        internal_stars,
         click_progress,
         (
           SELECT COUNT(*) 
