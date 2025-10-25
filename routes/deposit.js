@@ -57,56 +57,48 @@ router.post("/complete", authMiddleware, async (req, res) => {
     const { telegramId } = req.user;
     const { payload } = req.body;
 
-    if (!payload || !payload.startsWith("deposit_"))
-      return res.status(400).json({ success: false, message: "Invalid payload" });
+    if (!payload) return res.status(400).json({ success: false });
+
+    // 🔹 Перевірка платежу через Telegram API
+    const botToken = process.env.BOT_TOKEN;
+    const invoiceResponse = await axios.post(
+      `https://api.telegram.org/bot${botToken}/getInvoiceLink`, 
+      { payload }
+    );
+
+    const paymentSuccess = invoiceResponse.data?.ok && invoiceResponse.data.result?.is_paid;
+    if (!paymentSuccess) return res.status(400).json({ success: false, message: "Payment not confirmed" });
 
     const [, payloadTelegramId, amountStr] = payload.split("_");
     const amount = parseInt(amountStr, 10);
 
-    if (payloadTelegramId !== String(telegramId))
-      return res.status(403).json({ success: false, message: "Payload mismatch" });
-
-    const botToken = process.env.BOT_TOKEN;
-
-    // ✅ Перевіряємо платіж у Telegram через getUpdates або getInvoiceLink
-    // Тут спрощено — ти можеш замінити на реальний check через Telegram API
-    const isPaid = true; // заміни на реальну перевірку
-
-    if (!isPaid)
-      return res.status(400).json({ success: false, message: "Payment not confirmed" });
-
-    // Обчислення бонусу для першого депозиту
-    let bonus = 0;
-    if (amount === 100) bonus = 20;
-    else if (amount === 500) bonus = 100;
-    else if (amount === 1000) bonus = 300;
-
-    // Перевірка, чи це перший депозит
     const depositCheck = await db.query(
       "SELECT COUNT(*) AS total FROM deposits WHERE telegram_id = $1",
       [telegramId]
     );
     const isFirstDeposit = parseInt(depositCheck.rows[0].total, 10) === 0;
 
+    let bonus = 0;
+    if (amount === 100) bonus = 20;
+    else if (amount === 500) bonus = 100;
+    else if (amount === 1000) bonus = 300;
+
     const totalStars = amount + (isFirstDeposit ? bonus : 0);
 
-    // Оновлюємо internal_stars користувача
     await db.query(
       "UPDATE users SET internal_stars = internal_stars + $1 WHERE telegram_id = $2",
       [totalStars, telegramId]
     );
 
-    // Запис у таблицю депозитів
     await db.query(
-      `INSERT INTO deposits (telegram_id, amount, bonus, total_added)
-       VALUES ($1, $2, $3, $4)`,
+      "INSERT INTO deposits (telegram_id, amount, bonus, total_added) VALUES ($1,$2,$3,$4)",
       [telegramId, amount, isFirstDeposit ? bonus : 0, totalStars]
     );
 
     res.json({ success: true, internal_stars: totalStars });
   } catch (err) {
-    console.error("Deposit complete error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 });
 
