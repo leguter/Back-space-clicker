@@ -89,28 +89,16 @@ router.post("/tap", async (req, res) => {
 router.post("/update-clicks", async (req, res) => {
   try {
     const { telegramId } = req.user;
+    
+    // Ми очікуємо, що фронтенд надсилає { clickCount: 100 }
+    // (де 100 - це загальна сума кліків, яку треба додати)
+    const { clickCount } = req.body;
 
-    // Диагностичний лог тіла — тимчасово (після налагодження можна прибрати)
-    console.log("/update-clicks body:", req.body);
-
-    // Підтримуємо два варіанти тіла: { progress: 0.001 } або { clickCount: 1 }
-    let { progress, clickCount } = req.body || {};
-
-    // Якщо прислали clickCount, перетворюємо в progress інкремент:
-    // Наприклад один клік = 1 / 1000
-    if (typeof clickCount === "number") {
-      if (!Number.isFinite(clickCount) || clickCount < 0) {
-        return res.status(400).json({ message: "Invalid clickCount value" });
-      }
-      progress = (clickCount * 1.0) / 1000;
+    if (typeof clickCount !== "number" || !Number.isFinite(clickCount) || clickCount <= 0) {
+      return res.status(400).json({ message: "Invalid clickCount value" });
     }
 
-    // Тепер progress повинен бути числом > 0 (ми дозволяємо навіть дуже маленькі значення)
-    if (typeof progress !== "number" || !Number.isFinite(progress) || progress <= 0) {
-      return res.status(400).json({ message: "Invalid progress value" });
-    }
-
-    // Беремо актуальний click_progress
+    // 1. Отримуємо поточний прогрес
     const userResult = await db.query(
       "SELECT click_progress FROM users WHERE telegram_id = $1",
       [telegramId]
@@ -118,17 +106,34 @@ router.post("/update-clicks", async (req, res) => {
 
     if (userResult.rows.length === 0) return res.status(404).json({ message: "User not found" });
 
-    const current = Number(userResult.rows[0].click_progress) || 0;
-    let newProgress = current + progress;
-    if (!Number.isFinite(newProgress)) newProgress = 0;
-    if (newProgress > 1) newProgress = 1;
+    // 2. Розраховуємо новий прогрес
+    // (Логіка така сама, як у тебе: 1000 "кліків" = 1 повний бар)
+    const progressIncrement = clickCount / 1000.0; 
+    const currentProgress = Number(userResult.rows[0].click_progress) || 0;
+    
+    let newProgress = currentProgress + progressIncrement;
+    // Ми не скидаємо прогрес тут, ми просто обмежуємо його 1.
+    // Скидання (progress = 0) відбувається тільки в /claim-ticket
+    if (newProgress > 1) newProgress = 1; 
 
-    await db.query(
-      "UPDATE users SET click_progress = $1 WHERE telegram_id = $2",
-      [newProgress, telegramId]
+    // 3. ❗️ ГОЛОВНЕ ВИПРАВЛЕННЯ:
+    // Оновлюємо І БАЛАНС, І ПРОГРЕС
+    const updateResult = await db.query(
+      `UPDATE users 
+       SET 
+         balance = balance + $1,  -- ⬅️ ЦЬОГО РЯДКА НЕ БУЛО
+         click_progress = $2 
+       WHERE telegram_id = $3
+       RETURNING balance, click_progress`,
+      [clickCount, newProgress, telegramId]
     );
 
-    return res.json({ message: "Progress updated", progress: newProgress });
+    return res.json({
+      message: "Balance and progress updated",
+      newBalance: updateResult.rows[0].balance,
+      progress: Number(updateResult.rows[0].click_progress),
+    });
+
   } catch (err) {
     console.error("❌ /update-clicks error:", err);
     return res.status(500).json({ message: "Server error" });
