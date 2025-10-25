@@ -1,120 +1,106 @@
-const express = require("express");
-const db = require("../db");
-const authMiddleware = require("../middleware/auth");
-const axios = require("axios");
+import { useState, useEffect } from "react";
+import api from "../../utils/api";
+import styles from "./DepositPage.module.css";
 
-const router = express.Router();
-router.use(authMiddleware);
+export default function DepositPage() {
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [message, setMessage] = useState("");
+  const [balance, setBalance] = useState(0);
 
-// ===============================================================
-// 🧾 POST /api/deposit/create_invoice
-// Створення інвойсу Telegram для поповнення
-// ===============================================================
-router.post("/create_invoice", async (req, res) => {
-  try {
-    const { telegramId } = req.user;
-    const { amount } = req.body;
+  const depositOptions = [
+    { amount: 1, bonus: 0 },
+    { amount: 50, bonus: 0 },
+    { amount: 100, bonus: 20 },
+    { amount: 500, bonus: 100 },
+    { amount: 1000, bonus: 300 },
+  ];
 
-    if (!amount || amount <= 0)
-      return res.status(400).json({ success: false, message: "Invalid amount" });
-
-    const botToken = process.env.BOT_TOKEN;
-
-    const response = await axios.post(
-      `https://api.telegram.org/bot${botToken}/createInvoiceLink`,
-      {
-        title: "Deposit Stars",
-        description: `Deposit ${amount}⭐ to your balance`,
-        payload: `deposit_${telegramId}_${amount}_${Date.now()}`,
-        provider_token: "", // ⚠️ Вкажи токен платіжного провайдера
-        currency: "XTR",
-        prices: [{ label: "Deposit", amount }],
+  // === Початкове завантаження поточного балансу ===
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get("/api/user/me");
+        if (res.data?.user) {
+          setBalance(res.data.user.internal_stars || 0);
+        }
+      } catch (e) {
+        console.error("Load balance error:", e);
       }
-    );
+    })();
+  }, []);
 
-    if (response.data?.ok && response.data.result) {
-      res.json({ success: true, invoice_link: response.data.result });
-    } else {
-      throw new Error("Telegram API error");
-    }
-  } catch (err) {
-    console.error("Create deposit invoice error:", err.response?.data || err.message);
-    res.status(500).json({ success: false, message: "Failed to create deposit invoice" });
-  }
-});
+  // === Створення інвойсу та відкриття оплати ===
+  const handleDeposit = async (amount) => {
+    try {
+      setLoading(true);
+      setSelected(amount);
+      setMessage("");
 
-// ===============================================================
-// 💳 POST /api/deposit/webhook
-// Обробка підтвердження платежів від Telegram
-// ===============================================================
-router.post("/webhook", async (req, res) => {
-  try {
-    const update = req.body;
+      const res = await api.post("/api/deposit/create_invoice", { amount });
 
-    // 🔍 Telegram надсилає payment_successful
-    if (update.message?.successful_payment) {
-      const payment = update.message.successful_payment;
+      if (res.data?.success && res.data.invoice_link) {
+        if (window.Telegram?.WebApp) {
+          // Відкриваємо оплату у Telegram WebApp
+          window.Telegram.WebApp.openInvoice(res.data.invoice_link);
+          setMessage("💳 Відкриваємо оплату у Telegram...");
+        } else {
+          // fallback для вебверсії
+          window.open(res.data.invoice_link, "_blank");
+          setMessage("Відкрито у новому вікні ✅");
+        }
 
-      const payload = payment.invoice_payload;
-      if (!payload.startsWith("deposit_")) {
-        console.log("Not a deposit payload");
-        return res.sendStatus(200);
+        // Періодично перевіряємо бекенд, чи оплата пройшла
+        const checkPayment = async () => {
+          try {
+            const userRes = await api.get("/api/user/me");
+            if (userRes.data?.user) {
+              const newBalance = userRes.data.user.internal_stars || 0;
+              if (newBalance > balance) {
+                setBalance(newBalance);
+                setMessage("💰 Баланс оновлено!");
+              }
+            }
+          } catch (err) {
+            console.error("Payment verification error:", err);
+          }
+        };
+
+        // Простий таймер перевірки (можна зробити довше)
+        const interval = setInterval(checkPayment, 2000);
+        setTimeout(() => clearInterval(interval), 30000); // зупиняємо через 30 сек
+
+      } else {
+        setMessage("Не вдалося створити інвойс 😕");
       }
-
-      const [, telegramId, amountStr] = payload.split("_");
-      const amount = parseInt(amountStr, 10);
-
-      // 🎁 Розрахунок бонусів для першого депозиту
-      let bonus = 0;
-      if (amount === 100) bonus = 20;
-      else if (amount === 500) bonus = 100;
-      else if (amount === 1000) bonus = 300;
-
-      // 🔍 Перевірка чи це перший депозит
-      const depositCheck = await db.query(
-        "SELECT COUNT(*) AS total FROM deposits WHERE telegram_id = $1",
-        [telegramId]
-      );
-      const isFirstDeposit = parseInt(depositCheck.rows[0].total) === 0;
-
-      // 💰 Додаємо зірки на баланс користувача
-      const totalStars = amount + (isFirstDeposit ? bonus : 0);
-      await db.query(
-        "UPDATE users SET balance = balance + $1 WHERE telegram_id = $2",
-        [totalStars, telegramId]
-      );
-
-      // 💾 Запис у таблицю депозитів
-      await db.query(
-        `INSERT INTO deposits (telegram_id, amount, bonus, total_added)
-         VALUES ($1, $2, $3, $4)`,
-        [telegramId, amount, isFirstDeposit ? bonus : 0, totalStars]
-      );
-
-      // 📨 Сповіщення адміну
-      const botToken = process.env.BOT_TOKEN;
-      const adminChatId = process.env.ADMIN_CHAT_ID;
-
-      const message = `
-💰 *Новий депозит!*
-👤 ID: ${telegramId}
-⭐ Сума: ${amount}
-🎁 Бонус: ${isFirstDeposit ? bonus : 0}
-💎 Додано на баланс: ${totalStars}
-`;
-
-      await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        chat_id: adminChatId,
-        text: message,
-        parse_mode: "Markdown",
-      });
+    } catch (err) {
+      console.error("Deposit error:", err);
+      setMessage("Помилка під час створення інвойсу");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("Deposit webhook error:", err);
-    res.sendStatus(500);
-  }
-});
+  return (
+    <div className={styles.Container}>
+      <h2 className={styles.Title}>💰 Deposit Stars</h2>
+      <p className={styles.Subtitle}>Твій поточний баланс: {balance} ⭐</p>
 
-module.exports = router;
+      <div className={styles.ButtonGrid}>
+        {depositOptions.map(({ amount, bonus }) => (
+          <button
+            key={amount}
+            className={`${styles.DepositButton} ${selected === amount ? styles.Active : ""}`}
+            onClick={() => handleDeposit(amount)}
+            disabled={loading}
+          >
+            <div className={styles.Amount}>{amount} ⭐</div>
+            {bonus > 0 && <div className={styles.Bonus}>+{bonus} бонус</div>}
+          </button>
+        ))}
+      </div>
+
+      {message && <p className={styles.Message}>{message}</p>}
+    </div>
+  );
+}
