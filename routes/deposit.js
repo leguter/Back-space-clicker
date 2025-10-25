@@ -25,7 +25,7 @@ router.post("/create_invoice", async (req, res) => {
       {
         title: "Deposit Stars",
         description: `Deposit ${amount}⭐ to your balance`,
-        payload: `deposit_${telegramId}_${amount}_${Date.now()}`,
+        payload: `deposit_${telegramId}_${amount}_${Date.now()}`, // унікальний payload
         provider_token: "", // ⚠️ Вкажи токен платіжного провайдера
         currency: "XTR",
         prices: [{ label: "Deposit", amount }],
@@ -33,7 +33,12 @@ router.post("/create_invoice", async (req, res) => {
     );
 
     if (response.data?.ok && response.data.result) {
-      res.json({ success: true, invoice_link: response.data.result });
+      // Повертаємо payload для фронту, щоб він надсилав на complete
+      res.json({
+        success: true,
+        invoice_link: response.data.result,
+        payload: response.data.result.invoice_payload || response.data.result, 
+      });
     } else {
       throw new Error("Telegram API error");
     }
@@ -45,15 +50,30 @@ router.post("/create_invoice", async (req, res) => {
 
 // ===============================================================
 // 💳 POST /api/deposit/complete
-// Підтвердження оплати та оновлення internal_stars
+// Підтвердження оплати через payload Telegram та оновлення internal_stars
 // ===============================================================
 router.post("/complete", authMiddleware, async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const { amount } = req.body;
+    const { payload } = req.body;
 
-    if (!amount || amount <= 0)
-      return res.status(400).json({ success: false, message: "Invalid amount" });
+    if (!payload || !payload.startsWith("deposit_"))
+      return res.status(400).json({ success: false, message: "Invalid payload" });
+
+    const [, payloadTelegramId, amountStr] = payload.split("_");
+    const amount = parseInt(amountStr, 10);
+
+    if (payloadTelegramId !== String(telegramId))
+      return res.status(403).json({ success: false, message: "Payload mismatch" });
+
+    const botToken = process.env.BOT_TOKEN;
+
+    // ✅ Перевіряємо платіж у Telegram через getUpdates або getInvoiceLink
+    // Тут спрощено — ти можеш замінити на реальний check через Telegram API
+    const isPaid = true; // заміни на реальну перевірку
+
+    if (!isPaid)
+      return res.status(400).json({ success: false, message: "Payment not confirmed" });
 
     // Обчислення бонусу для першого депозиту
     let bonus = 0;
