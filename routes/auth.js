@@ -154,7 +154,7 @@ router.post("/", async (req, res) => {
           user.photo_url,
           referrerId ? 2 : 0, // 1 тікет, якщо є реферер, інакше 0
           referrerId || null,  // ID реферера або NULL
-          internal_stars || 0,
+          0,
         ];
 
         const newUserResult = await client.query(newUserQuery, newUserValues);
