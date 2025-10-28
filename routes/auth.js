@@ -161,13 +161,15 @@ router.post("/", async (req, res) => {
         userResult = newUserResult; // Зберігаємо результат для подальшого використання
 
         // Якщо реферал прийшов за посиланням, нараховуємо нагороду рефереру
-        if (referrerId) {
-          const updateReferrerQuery = `
-            UPDATE users 
-            SET tickets = tickets + 2
-            WHERE telegram_id = $1`;
-          await client.query(updateReferrerQuery, [referrerId]);
-        }
+       if (referrerId) {
+  const updateReferrerQuery = `
+    UPDATE users 
+    SET 
+      tickets = tickets + 2, 
+      referral_spins = referral_spins + 1
+    WHERE telegram_id = $1`;
+  await client.query(updateReferrerQuery, [referrerId]);
+}
         
         await client.query("COMMIT"); // Успішно! Зберігаємо зміни
       } catch (e) {
