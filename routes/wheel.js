@@ -127,7 +127,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ===============================================================
-// 🧾 POST /api/wheel/create_invoice
+// 🧾 POST /api/wheel/create_invoice (Без змін)
 // ===============================================================
 router.post("/create_invoice", async (req, res) => {
   try {
@@ -159,14 +159,13 @@ router.post("/create_invoice", async (req, res) => {
 });
 
 // ===============================================================
-// 🎡 POST /api/wheel/spin
+// 🎡 POST /api/wheel/spin (Платний спін - без змін, він працював)
 // ===============================================================
 router.post("/spin", async (req, res) => {
   try {
     const { telegramId } = req.user;
-    const spinCost = 10; // Вартість спіну в internal_stars
+    const spinCost = 10;
 
-    // Перевіряємо баланс і списуємо спін
     const userCheck = await db.query(
       "SELECT internal_stars FROM users WHERE telegram_id = $1",
       [telegramId]
@@ -182,7 +181,7 @@ router.post("/spin", async (req, res) => {
       [spinCost, telegramId]
     );
 
-    // Розіграш призу
+    // --- Логіка Розіграшу ---
     const roll = Math.random() * 100;
     let reward;
 
@@ -204,15 +203,16 @@ router.post("/spin", async (req, res) => {
        VALUES ($1, $2, $3)`,
       [telegramId, reward.type, reward.value.toString()]
     );
+    // --- Кінець Логіки Розіграшу ---
 
     const updatedUser = await db.query(
-      "SELECT balance, tickets, tap_power, internal_stars, referral_spins, last_daily_spin FROM users WHERE telegram_id = $1",
+      "SELECT balance, tickets, tap_power, internal_stars FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
     res.json({
       success: true,
-      result: reward,
+      result: reward, // <-- Повертаємо приз
       balance: updatedUser.rows[0].balance,
       tickets: updatedUser.rows[0].tickets,
       tap_power: updatedUser.rows[0].tap_power,
@@ -225,20 +225,16 @@ router.post("/spin", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 GET /api/wheel/referral_status
-// Повертає кількість доступних реферальних спінів
+// 🟢 GET /api/wheel/referral_status (Без змін)
 // ===============================================================
 router.get("/referral_status", async (req, res) => {
   try {
     const { telegramId } = req.user;
-
     const user = await db.query(
       "SELECT referral_spins FROM users WHERE telegram_id = $1",
       [telegramId]
     );
-
     if (!user.rows[0]) return res.status(404).json({ success: false, message: "User not found" });
-
     res.json({ success: true, referral_spins: user.rows[0].referral_spins });
   } catch (err) {
     console.error("Referral status error:", err);
@@ -247,8 +243,7 @@ router.get("/referral_status", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 POST /api/wheel/referral_spin
-// Використання одного реферального спіну
+// 🟢 POST /api/wheel/referral_spin (❗️ ЗМІНЕНО)
 // ===============================================================
 router.post("/referral_spin", async (req, res) => {
   try {
@@ -270,7 +265,47 @@ router.post("/referral_spin", async (req, res) => {
       [telegramId]
     );
 
-    res.json({ success: true, message: "Referral spin used" });
+    // ❗️ Додано логіку розіграшу, скопійовану з /spin
+    const roll = Math.random() * 100;
+    let reward;
+
+    if (roll < 80) {
+      reward = { type: "raffle_ticket", value: 1 };
+      await db.query("UPDATE users SET tickets = tickets + 1 WHERE telegram_id = $1", [telegramId]);
+    } else if (roll < 98) {
+      reward = { type: "boost", value: "x2 Clicks" };
+      await db.query("UPDATE users SET tap_power = tap_power + 2 WHERE telegram_id = $1", [telegramId]);
+    } else if (roll < 99) {
+      reward = { type: "stars", value: 5 };
+      await db.query("UPDATE users SET internal_stars = internal_stars + 5 WHERE telegram_id = $1", [telegramId]);
+    } else {
+      reward = { type: "nft", value: "Mystery Box" };
+    }
+
+    await db.query(
+      `INSERT INTO user_spins (user_id, reward_type, reward_value)
+       VALUES ($1, $2, $3)`,
+      [telegramId, reward.type, reward.value.toString()]
+    );
+    // ❗️ Кінець скопійованої логіки
+
+    // ❗️ Повертаємо повні оновлені дані
+    const updatedUser = await db.query(
+      "SELECT balance, tickets, tap_power, internal_stars, referral_spins FROM users WHERE telegram_id = $1",
+      [telegramId]
+    );
+
+    res.json({
+      success: true,
+      result: reward, // <-- Повертаємо приз
+      // Повертаємо всі дані, які могли змінитись
+      balance: updatedUser.rows[0].balance,
+      tickets: updatedUser.rows[0].tickets,
+      tap_power: updatedUser.rows[0].tap_power,
+      new_internal_stars: updatedUser.rows[0].internal_stars,
+      referral_spins: updatedUser.rows[0].referral_spins,
+    });
+
   } catch (err) {
     console.error("Referral spin error:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -278,8 +313,7 @@ router.post("/referral_spin", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 GET /api/wheel/daily_status
-// Повертає, чи доступний щоденний спін
+// 🟢 GET /api/wheel/daily_status (❗️ ЗМІНЕНО)
 // ===============================================================
 router.get("/daily_status", async (req, res) => {
   try {
@@ -294,9 +328,28 @@ router.get("/daily_status", async (req, res) => {
 
     const lastSpin = user.rows[0].last_daily_spin;
     const now = new Date();
-    const available = !lastSpin || (now - lastSpin) / 1000 / 60 / 60 >= 24;
+    let available = true;
+    let nextSpinTime = null;
 
-    res.json({ success: true, daily_available: available });
+    // ❗️ Розрахунок часу до наступного спіну
+    if (lastSpin) {
+      const lastSpinDate = new Date(lastSpin);
+      const timeDiffMs = now.getTime() - lastSpinDate.getTime();
+      const hoursPassed = timeDiffMs / 1000 / 60 / 60;
+
+      if (hoursPassed < 24) {
+        available = false;
+        // Встановлюємо час наступного спіну рівно через 24 години після останнього
+        nextSpinTime = new Date(lastSpinDate.getTime() + 24 * 60 * 60 * 1000);
+      }
+    }
+
+    res.json({
+      success: true,
+      daily_available: available,
+      next_spin_time: nextSpinTime ? nextSpinTime.toISOString() : null, // <-- Повертаємо час
+    });
+
   } catch (err) {
     console.error("Daily status error:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -304,8 +357,7 @@ router.get("/daily_status", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 POST /api/wheel/daily_spin
-// Використання щоденного спіну
+// 🟢 POST /api/wheel/daily_spin (❗️ ЗМІНЕНО)
 // ===============================================================
 router.post("/daily_spin", async (req, res) => {
   try {
@@ -319,18 +371,62 @@ router.post("/daily_spin", async (req, res) => {
     if (!userCheck.rows[0]) return res.status(404).json({ success: false, message: "User not found" });
 
     const lastSpin = userCheck.rows[0].last_daily_spin;
-    const now = new Date();
-    if (lastSpin && (now - lastSpin) / 1000 / 60 / 60 < 24) {
-      return res.json({ success: false, message: "Daily spin not available yet" });
+    const now = new Date(); // Визначаємо 'now' тут
+    if (lastSpin) {
+      const timeDiffMs = now.getTime() - new Date(lastSpin).getTime();
+      if (timeDiffMs / 1000 / 60 / 60 < 24) {
+        return res.json({ success: false, message: "Daily spin not available yet" });
+      }
     }
 
-    // Оновлюємо час останнього спіну
+    // Оновлюємо час останнього спіну на 'now'
     await db.query(
-      "UPDATE users SET last_daily_spin = NOW() WHERE telegram_id = $1",
+      "UPDATE users SET last_daily_spin = $1 WHERE telegram_id = $2",
+      [now, telegramId]
+    );
+
+    // ❗️ Додано логіку розіграшу
+    const roll = Math.random() * 100;
+    let reward;
+
+    if (roll < 80) {
+      reward = { type: "raffle_ticket", value: 1 };
+      await db.query("UPDATE users SET tickets = tickets + 1 WHERE telegram_id = $1", [telegramId]);
+    } else if (roll < 98) {
+      reward = { type: "boost", value: "x2 Clicks" };
+      await db.query("UPDATE users SET tap_power = tap_power + 2 WHERE telegram_id = $1", [telegramId]);
+    } else if (roll < 99) {
+      reward = { type: "stars", value: 5 };
+      await db.query("UPDATE users SET internal_stars = internal_stars + 5 WHERE telegram_id = $1", [telegramId]);
+    } else {
+      reward = { type: "nft", value: "Mystery Box" };
+    }
+
+    await db.query(
+      `INSERT INTO user_spins (user_id, reward_type, reward_value)
+       VALUES ($1, $2, $3)`,
+      [telegramId, reward.type, reward.value.toString()]
+    );
+    // ❗️ Кінець скопійованої логіки
+
+    // ❗️ Повертаємо повні дані + час наступного спіну
+    const nextSpinTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const updatedUser = await db.query(
+      "SELECT balance, tickets, tap_power, internal_stars FROM users WHERE telegram_id = $1",
       [telegramId]
     );
 
-    res.json({ success: true, message: "Daily spin used" });
+    res.json({
+      success: true,
+      result: reward, // <-- Повертаємо приз
+      next_spin_time: nextSpinTime.toISOString(), // <-- Повертаємо час
+      // Повертаємо всі дані, які могли змінитись
+      balance: updatedUser.rows[0].balance,
+      tickets: updatedUser.rows[0].tickets,
+      tap_power: updatedUser.rows[0].tap_power,
+      new_internal_stars: updatedUser.rows[0].internal_stars,
+    });
+
   } catch (err) {
     console.error("Daily spin error:", err);
     res.status(500).json({ success: false, message: "Server error" });
