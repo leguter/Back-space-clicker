@@ -265,7 +265,7 @@ router.post("/referral_spin", async (req, res) => {
     // ❗️ ЗМІНА ТУТ: Ми перевіряємо доступні спіни за новою логікою
     // 1. Рахуємо рефералів
     const referralsRes = await db.query(
-      "SELECT COUNT(*) AS total_referrals FROM users WHERE referred_by = $1",
+      "SELECT COUNT(*) AS referrals FROM users WHERE referred_by = $1",
       [telegramId]
     );
     const totalReferrals = parseInt(referralsRes.rows[0].total_referrals, 10);

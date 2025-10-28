@@ -163,7 +163,6 @@ router.post("/", async (req, res) => {
             UPDATE users 
             SET 
               tickets = tickets + 2, 
-              referral_spins = referral_spins + 1
             WHERE telegram_id = $1`;
           await client.query(updateReferrerQuery, [referrerId]);
         }
