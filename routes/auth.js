@@ -125,58 +125,55 @@ router.post("/", async (req, res) => {
     // 2. Робота з користувачем
     const user = JSON.parse(urlParams.get("user"));
     const telegramId = user.id;
-    
-    // ✅ НОВЕ: Отримуємо ID реферера з параметра ?start=...
-    // Telegram автоматично додає його в initData як `start_param`
+
     const referrerId = urlParams.get("start_param");
 
-    // Перевіряємо, чи існує користувач
     let userResult = await db.query("SELECT * FROM users WHERE telegram_id = $1", [telegramId]);
 
     // ✅ ОСНОВНА ЛОГІКА РЕФЕРАЛЬНОЇ СИСТЕМИ
     if (userResult.rows.length === 0) {
-      // ❗️ КОРИСТУВАЧ НОВИЙ - час для магії рефералів!
-      const client = await db.connect(); // Беремо клієнта з пулу для транзакції
+      // ❗️ КОРИСТУВАЧ НОВИЙ
+      const client = await db.connect();
       try {
-        await client.query("BEGIN"); // Починаємо транзакцію
+        await client.query("BEGIN");
 
         // Створюємо нового користувача (реферала)
-        // Якщо він прийшов за посиланням, даємо йому 1 тікет і записуємо, хто його запросив
         const newUserQuery = `
-          INSERT INTO users (telegram_id, first_name, username, balance, photo_url, tickets, referred_by, internal_stars)
-          VALUES ($1, $2, $3, 0, $4, $5, $6, $7)
+          INSERT INTO users (telegram_id, first_name, username, balance, photo_url, tickets, referred_by, internal_stars, referral_spins)
+          VALUES ($1, $2, $3, 0, $4, $5, $6, 0, 0)
           RETURNING *`;
         
+        // (Я спростив VALUES, бо balance, internal_stars і referral_spins завжди 0 для нового)
+        
         const newUserValues = [
-          telegramId,
-          user.first_name,
-          user.username,
-          user.photo_url,
-          referrerId ? 2 : 0, // 1 тікет, якщо є реферер, інакше 0
-          referrerId || null,  // ID реферера або NULL
-          0,
+          telegramId,           // $1
+          user.first_name,      // $2
+          user.username,        // $3
+          user.photo_url,       // $4
+          referrerId ? 2 : 0,   // $5: Бонусні тікети рефералу
+          referrerId || null,   // $6: ID реферера
         ];
 
         const newUserResult = await client.query(newUserQuery, newUserValues);
-        userResult = newUserResult; // Зберігаємо результат для подальшого використання
+        userResult = newUserResult;
 
-        // Якщо реферал прийшов за посиланням, нараховуємо нагороду рефереру
-       if (referrerId) {
-  const updateReferrerQuery = `
-    UPDATE users 
-    SET 
-      tickets = tickets + 2, 
-      referral_spins = referral_spins + 1
-    WHERE telegram_id = $1`;
-  await client.query(updateReferrerQuery, [referrerId]);
-}
+        // Нараховуємо нагороду рефереру
+        if (referrerId) {
+          const updateReferrerQuery = `
+            UPDATE users 
+            SET 
+              tickets = tickets + 2, 
+              referral_spins = referral_spins + 1
+            WHERE telegram_id = $1`;
+          await client.query(updateReferrerQuery, [referrerId]);
+        }
         
-        await client.query("COMMIT"); // Успішно! Зберігаємо зміни
+        await client.query("COMMIT");
       } catch (e) {
-        await client.query("ROLLBACK"); // Якщо сталася помилка, відкочуємо все
-        throw e; // Прокидаємо помилку далі
+        await client.query("ROLLBACK");
+        throw e;
       } finally {
-        client.release(); // Повертаємо клієнта в пул
+        client.release();
       }
 
     } else {
@@ -189,11 +186,12 @@ router.post("/", async (req, res) => {
     
     const finalUser = userResult.rows[0];
 
-    // 3. Створення JWT токена та відповідь (без змін)
+    // 3. Створення JWT токена та відповідь
     const token = jwt.sign({ telegramId: finalUser.telegram_id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
 
+    // ❗️❗️❗️ ОСЬ ТУТ ВИПРАВЛЕННЯ ❗️❗️❗️
     res.json({
       message: "Authenticated successfully",
       token,
@@ -203,7 +201,10 @@ router.post("/", async (req, res) => {
         username: finalUser.username,
         photoUrl: finalUser.photo_url,
         balance: finalUser.balance,
-        tickets: finalUser.tickets
+        tickets: finalUser.tickets,
+        // ✅ ДОДАНО:
+        internal_stars: finalUser.internal_stars,
+        referral_spins: finalUser.referral_spins
       },
     });
 
