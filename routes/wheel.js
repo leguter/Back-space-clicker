@@ -124,12 +124,37 @@ const authMiddleware = require("../middleware/auth");
 const axios = require("axios");
 
 const router = express.Router();
-router.use(authMiddleware); // Всі роути захищені
+router.use(authMiddleware);
+
+// --- Функція для отримання актуальних даних про спіни ---
+// (Ми будемо використовувати її в ДВОХ роутах, щоб уникнути помилок)
+async function getReferralSpinStatus(telegramId) {
+  // 1. Отримуємо, скільки всього спінів зароблено (з вашої колонки 'referrals')
+  const userRes = await db.query(
+    "SELECT referrals FROM users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  const totalReferrals = parseInt(userRes.rows[0].referrals, 10) || 0;
+
+  // 2. Рахуємо, скільки разів він ВЖЕ крутив реферальну рулетку
+  const usedSpinsRes = await db.query(
+    "SELECT COUNT(*) AS used_spins FROM user_spins WHERE user_id = $1 AND spin_type = 'referral'",
+    [telegramId]
+  );
+  const usedSpins = parseInt(usedSpinsRes.rows[0].used_spins, 10) || 0;
+
+  // 3. Доступно = (Всього зароблено) - (Вже використано)
+  const availableSpins = Math.max(0, totalReferrals - usedSpins);
+  
+  return { availableSpins, totalReferrals, usedSpins };
+}
+// --------------------------------------------------------
 
 // ===============================================================
 // 🧾 POST /api/wheel/create_invoice (Без змін)
 // ===============================================================
 router.post("/create_invoice", async (req, res) => {
+  // ... (Ваш код без змін)
   try {
     const { telegramId } = req.user;
     const spinPrice = 10; // 10 XTR
@@ -199,7 +224,7 @@ router.post("/spin", async (req, res) => {
     // ❗️ ЗМІНА ТУТ: Записуємо тип спіну
     await db.query(
       `INSERT INTO user_spins (user_id, reward_type, reward_value, spin_type)
-       VALUES ($1, $2, $3, 'paid')`, // <-- Додано 'paid'
+       VALUES ($1, $2, $3, 'paid')`,
       [telegramId, reward.type, reward.value.toString()]
     );
     // --- Кінець ---
@@ -224,29 +249,16 @@ router.post("/spin", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 GET /api/wheel/referral_status (❗️ ПОВНІСТЮ ЗМІНЕНО)
+// 🟢 GET /api/wheel/referral_status (❗️ ПЕРЕПИСАНО)
 // ===============================================================
 router.get("/referral_status", async (req, res) => {
   try {
     const { telegramId } = req.user;
-
-    // 1. Рахуємо, скільки всього рефералів у користувача
-    const referralsRes = await db.query(
-      "SELECT COUNT(*) AS referrals FROM users WHERE referred_by = $1",
-      [telegramId]
-    );
-    const totalReferrals = parseInt(referralsRes.rows[0].total_referrals, 10);
-
-    // 2. Рахуємо, скільки разів він ВЖЕ крутив реферальну рулетку
-    const usedSpinsRes = await db.query(
-      "SELECT COUNT(*) AS used_spins FROM user_spins WHERE user_id = $1 AND spin_type = 'referral'",
-      [telegramId]
-    );
-    const usedSpins = parseInt(usedSpinsRes.rows[0].used_spins, 10);
-
-    // 3. Доступно = (Всього рефералів) - (Використано спінів)
-    const availableSpins = Math.max(0, totalReferrals - usedSpins);
-
+    
+    // Використовуємо нову функцію
+    const { availableSpins } = await getReferralSpinStatus(telegramId);
+    
+    // Повертаємо назву 'referral_spins', бо фронтенд очікує її
     res.json({ success: true, referral_spins: availableSpins });
 
   } catch (err) {
@@ -256,37 +268,20 @@ router.get("/referral_status", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 POST /api/wheel/referral_spin (❗️ ЗМІНЕНО)
+// 🟢 POST /api/wheel/referral_spin (❗️ ПЕРЕПИСАНО)
 // ===============================================================
 router.post("/referral_spin", async (req, res) => {
   try {
     const { telegramId } = req.user;
 
-    // ❗️ ЗМІНА ТУТ: Ми перевіряємо доступні спіни за новою логікою
-    // 1. Рахуємо рефералів
-    const referralsRes = await db.query(
-      "SELECT COUNT(*) AS referrals FROM users WHERE referred_by = $1",
-      [telegramId]
-    );
-    const totalReferrals = parseInt(referralsRes.rows[0].total_referrals, 10);
+    // 1. Перевіряємо, чи є доступні спіни, за новою логікою
+    const { availableSpins, totalReferrals, usedSpins } = await getReferralSpinStatus(telegramId);
 
-    // 2. Рахуємо використані спіни
-    const usedSpinsRes = await db.query(
-      "SELECT COUNT(*) AS used_spins FROM user_spins WHERE user_id = $1 AND spin_type = 'referral'",
-      [telegramId]
-    );
-    const usedSpins = parseInt(usedSpinsRes.rows[0].used_spins, 10);
-
-    // 3. Перевіряємо, чи є доступні
-    if (usedSpins >= totalReferrals) {
+    if (availableSpins <= 0) {
       return res.json({ success: false, message: "No referral spins left" });
     }
-    // ❗️ Кінець перевірки
 
-    // Якщо спін доступний, ми НЕ ЗМІНЮЄМО 'referral_spins'
-    // Ми просто проводимо розіграш і записуємо його в історію
-
-    // --- Розіграш (без змін) ---
+    // 2. Якщо спін доступний, проводимо розіграш
     const roll = Math.random() * 100;
     let reward;
     if (roll < 80) {
@@ -302,15 +297,14 @@ router.post("/referral_spin", async (req, res) => {
       reward = { type: "nft", value: "Mystery Box" };
     }
 
-    // ❗️ ЗМІНА ТУТ: Записуємо в історію, що це був 'referral' спін
+    // 3. Записуємо в історію, що цей спін БУВ ВИКОРИСТАНИЙ
     await db.query(
       `INSERT INTO user_spins (user_id, reward_type, reward_value, spin_type)
-       VALUES ($1, $2, $3, 'referral')`, // <-- Додано 'referral'
+       VALUES ($1, $2, $3, 'referral')`,
       [telegramId, reward.type, reward.value.toString()]
     );
-    // --- Кінець ---
 
-    // Повертаємо всі оновлені дані
+    // 4. Повертаємо дані
     const updatedUser = await db.query(
       "SELECT balance, tickets, tap_power, internal_stars FROM users WHERE telegram_id = $1",
       [telegramId]
@@ -323,20 +317,23 @@ router.post("/referral_spin", async (req, res) => {
       tickets: updatedUser.rows[0].tickets,
       tap_power: updatedUser.rows[0].tap_power,
       new_internal_stars: updatedUser.rows[0].internal_stars,
-      // Повертаємо нову кількість доступних спінів
-      referral_spins: Math.max(0, totalReferrals - (usedSpins + 1)) 
+      // Повертаємо нову кількість доступних спінів (на 1 менше)
+      referral_spins: availableSpins - 1
     });
 
-  } catch (err) {
+  } catch (err)
+ {
     console.error("Referral spin error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
+
 // ===============================================================
-// 🟢 GET /api/wheel/daily_status (Без змін у логіці)
+// 🟢 GET /api/wheel/daily_status (Без змін)
 // ===============================================================
 router.get("/daily_status", async (req, res) => {
+  // ... (Ваш код без змін)
   try {
     const { telegramId } = req.user;
     const user = await db.query(
@@ -371,7 +368,7 @@ router.get("/daily_status", async (req, res) => {
 });
 
 // ===============================================================
-// 🟢 POST /api/wheel/daily_spin (❗️ ЗМІНЕНО)
+// 🟢 POST /api/wheel/daily_spin (Змінено)
 // ===============================================================
 router.post("/daily_spin", async (req, res) => {
   try {
@@ -393,7 +390,6 @@ router.post("/daily_spin", async (req, res) => {
       }
     }
     
-    // Оновлюємо час останнього спіну
     const updateRes = await db.query(
       "UPDATE users SET last_daily_spin = NOW() WHERE telegram_id = $1 RETURNING last_daily_spin",
       [telegramId]
@@ -419,7 +415,7 @@ router.post("/daily_spin", async (req, res) => {
     // ❗️ ЗМІНА ТУТ: Записуємо тип спіну
     await db.query(
       `INSERT INTO user_spins (user_id, reward_type, reward_value, spin_type)
-       VALUES ($1, $2, $3, 'daily')`, // <-- Додано 'daily'
+       VALUES ($1, $2, $3, 'daily')`,
       [telegramId, reward.type, reward.value.toString()]
     );
     // --- Кінець ---
@@ -446,5 +442,6 @@ router.post("/daily_spin", async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 module.exports = router;
