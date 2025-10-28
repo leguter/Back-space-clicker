@@ -232,7 +232,7 @@ router.get("/referral_status", async (req, res) => {
 
     // 1. Рахуємо, скільки всього рефералів у користувача
     const referralsRes = await db.query(
-      "SELECT COUNT(*) AS total_referrals FROM users WHERE referred_by = $1",
+      "SELECT COUNT(*) AS referrals FROM users WHERE referred_by = $1",
       [telegramId]
     );
     const totalReferrals = parseInt(referralsRes.rows[0].total_referrals, 10);
