@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 const allowedOrigins = [
-    'https://space-nft-clicker-225d.vercel.app', // ✅ Ваша production URL
+    'https://space-nft-clicker.vercel.app', // ✅ Ваша production URL
     'http://localhost:5173'  // ✅ URL для локальної розробки (порт може бути іншим, напр. 3000)
 ];
 
